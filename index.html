@@ -2,19 +2,29 @@
 <html lang="fr" class="h-full">
 <head>
     <meta charset="UTF-8" />
-    <title>Pain Farci Déclice – Abidjan</title>
+    <title>Déclice – L'Excellence du Pain Farci</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0"/>
-    <meta name="theme-color" content="#f59e0b">
-    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#121212">
     
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Playfair+Display:ital,wght@0,700;0,900;1,700&display=swap" rel="stylesheet">
+    
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
     <script>
         tailwind.config = {
-            theme: { extend: { colors: { brand: { 50: '#fffbeb', 100: '#fef3c7', 500: '#f59e0b', 600: '#d97706', 700: '#b45309' } }, fontFamily: { 'sans': ['Poppins', 'sans-serif'] } } }
+            theme: { 
+                extend: { 
+                    colors: { 
+                        gold: { 500: '#C5A059', 600: '#A68342' },
+                        luxury: { 900: '#121212', 50: '#FDFCFB' }
+                    }, 
+                    fontFamily: { 'sans': ['Inter', 'sans-serif'], 'serif': ['Playfair Display', 'serif'] } 
+                } 
+            }
         };
     </script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -22,7 +32,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getFirestore, collection, doc, updateDoc, increment, onSnapshot, setDoc, serverTimestamp, runTransaction, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getFirestore, collection, doc, updateDoc, increment, onSnapshot, setDoc, serverTimestamp, runTransaction, query, orderBy, where } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
         import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
         const firebaseConfig = {
@@ -32,264 +42,247 @@
           storageBucket: "pain-farci-abidjan.firebasestorage.app",
           messagingSenderId: "832484741268",
           appId: "1:832484741268:web:18baf4a65a003fa3fca481",
-          measurementId: "G-4STB8KX58Y"
         };
 
-        try {
-            const app = initializeApp(firebaseConfig);
-            const db = getFirestore(app);
-            window.fb = { 
-                db, auth: getAuth(app), productsCol: collection(db, "products"), ordersCol: collection(db, "orders"), 
-                settingsDoc: doc(db, "settings", "store"), onSnapshot, doc, updateDoc, increment, setDoc, 
-                serverTimestamp, runTransaction, signOut, signInWithEmailAndPassword, onAuthStateChanged, query, orderBy, collection 
-            };
-            console.log("Firebase Initialisé");
-            window.dispatchEvent(new Event('fb-ready'));
-        } catch (e) {
-            console.error("Erreur Firebase:", e);
-            document.getElementById('root').innerHTML = `<div class="p-10 text-center font-bold text-red-500">Erreur de connexion Firebase. Vérifiez votre config.</div>`;
-        }
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        window.fb = { 
+            db, auth: getAuth(app), productsCol: collection(db, "products"), ordersCol: collection(db, "orders"), 
+            settingsDoc: doc(db, "settings", "store"), onSnapshot, doc, updateDoc, increment, setDoc, 
+            serverTimestamp, runTransaction, signOut, signInWithEmailAndPassword, onAuthStateChanged, query, orderBy, collection, where 
+        };
     </script>
 
     <style>
-        .glass { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(12px); }
-        .gradient-text { background: linear-gradient(to right, #f59e0b, #ea580c); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .animate-wave { animation: wave-pulse 2s infinite; }
-        @keyframes wave-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-premium { animation: fadeInUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+        .gold-gradient { background: linear-gradient(135deg, #C5A059 0%, #A68342 100%); }
+        .glass { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(12px); }
+        ::-webkit-scrollbar { width: 0px; }
     </style>
 </head>
-<body class="h-full bg-slate-50 font-sans">
-    <div id="root" class="h-full flex items-center justify-center">
-        <div class="text-center">
-            <i class="fas fa-bread-slice fa-spin text-4xl text-brand-500 mb-4"></i>
-            <p class="text-slate-400 font-black uppercase text-[10px] tracking-widest animate-pulse">Chargement Pain Farci 225...</p>
-        </div>
-    </div>
+<body class="h-full bg-luxury-50 text-luxury-900">
+    <div id="root" class="h-full"></div>
 
     <script type="text/babel">
         const SELLER_PHONE = "2250757618108";
         const WAVE_LINK = "https://pay.wave.com/m/M_ci_CmPu37RXsPDN/c/ci/";
-        const SHOP_LOCATION = "Https://maps.app.goo.gl/kbBVGu5LNdJDQaDY6";
 
         function App() {
-            if (!window.fb) return null;
-            const fb = window.fb;
+            const [view, setView] = React.useState('home');
             const [user, setUser] = React.useState(null);
             const [products, setProducts] = React.useState([]);
-            const [storeStatus, setStoreStatus] = React.useState({ isOpen: true, totalSales: 482 });
+            const [storeStatus, setStoreStatus] = React.useState({ isOpen: true });
             const [cart, setCart] = React.useState([]);
             const [cartOpen, setCartOpen] = React.useState(false);
-            const [lastOrderId, setLastOrderId] = React.useState(localStorage.getItem('lastOrderId'));
-            const [view, setView] = React.useState('home');
+            const [lastOrder, setLastOrder] = React.useState(null);
             const [loading, setLoading] = React.useState(false);
 
             React.useEffect(() => {
-                fb.onAuthStateChanged(fb.auth, u => setUser(u));
-                // Écoute des paramètres de la boutique
-                fb.onSnapshot(fb.settingsDoc, d => {
-                    if(d.exists()) setStoreStatus(d.data());
-                });
-                // Écoute des produits
-                return fb.onSnapshot(fb.productsCol, s => {
-                    setProducts(s.docs.map(d=>({id:d.id, ...d.data()})));
-                });
+                window.fb.onAuthStateChanged(window.fb.auth, u => setUser(u));
+                window.fb.onSnapshot(window.fb.settingsDoc, d => d.exists() && setStoreStatus(d.data()));
+                return window.fb.onSnapshot(window.fb.productsCol, s => setProducts(s.docs.map(d=>({id:d.id, ...d.data()}))));
             }, []);
 
             const total = cart.reduce((s,i)=>s+(i.price*i.qty),0);
 
             const handleOrder = async (form) => {
                 setLoading(true);
-                const orderId = "CMD-" + Date.now();
+                const orderId = "DCL-" + Math.floor(1000 + Math.random() * 9000);
+                const todayStr = new Date().toISOString().split('T')[0];
+                
                 try {
-                    await fb.runTransaction(fb.db, async (t) => {
-                        const productData = [];
+                    await window.fb.runTransaction(window.fb.db, async (t) => {
                         for (const item of cart) {
-                            const pRef = fb.doc(fb.db, "products", item.id);
+                            const pRef = window.fb.doc(window.fb.db, "products", item.id);
                             const pSnap = await t.get(pRef);
-                            if (pSnap.data().stock < item.qty) throw `Stock insuffisant pour ${item.name}`;
-                            productData.push({ ref: pRef, qty: item.qty });
+                            if (pSnap.data().stock < 1) throw `${item.name} est épuisé !`;
+                            t.update(pRef, { stock: window.fb.increment(-1) });
                         }
-                        for (const p of productData) { t.update(p.ref, { stock: fb.increment(-p.qty) }); }
-                        t.set(fb.doc(fb.db, "orders", orderId), { customer: form, items: cart, total, status: "Reçue", createdAt: fb.serverTimestamp() });
+                        const newOrder = { 
+                            id: orderId, customer: form, items: cart, total, status: "Reçue", 
+                            createdAt: window.fb.serverTimestamp(), dateStr: todayStr 
+                        };
+                        t.set(window.fb.doc(window.fb.db, "orders", orderId), newOrder);
+                        setLastOrder(newOrder);
                     });
-                    window.open(`https://wa.me/${SELLER_PHONE}?text=${encodeURIComponent("NOUVELLE COMMANDE: " + form.name)}`);
-                    localStorage.setItem('lastOrderId', orderId);
-                    setLastOrderId(orderId); setCart([]); setCartOpen(false); setView('success');
+                    setView('success'); setCart([]); setCartOpen(false);
                 } catch(e) { alert(e); }
                 setLoading(false);
             };
 
-            if (window.location.hash === "#admin") {
-                return user ? <AdminView fb={fb} storeStatus={storeStatus} signOut={() => fb.signOut(fb.auth)} /> : <LoginView fb={fb} />;
-            }
-
-            if (view === 'success') return <SuccessView total={total} onBack={() => setView('home')} />;
+            if (window.location.hash === "#admin") return user ? <AdminView fb={window.fb} products={products} storeStatus={storeStatus} /> : <LoginView fb={window.fb} />;
+            if (view === 'success') return <SuccessView order={lastOrder} onBack={() => setView('home')} />;
 
             return (
-                <div className="min-h-screen flex flex-col pb-20">
-                    <header className="px-6 pt-10 pb-4 sticky top-0 z-40 glass border-b border-amber-50">
-                        <div className="flex justify-between items-center">
+                <div className="min-h-screen flex flex-col animate-premium">
+                    <header className="px-8 pt-12 pb-6 sticky top-0 z-40 glass border-b border-luxury-900/5">
+                        <div className="flex justify-between items-end max-w-4xl mx-auto w-full">
                             <div>
-                                <h1 className="text-3xl font-black gradient-text tracking-tighter uppercase leading-none italic">Déclice</h1>
-                                <p className="text-[10px] font-black text-slate-400 tracking-[0.2em] uppercase">Pain Farci 225 • Sans Appel</p>
+                                <h1 className="font-serif italic text-4xl font-black tracking-tighter">Déclice</h1>
+                                <p className="text-[9px] uppercase tracking-[0.4em] font-bold text-gold-600 mt-2">Maison de Qualité</p>
                             </div>
-                            <button onClick={() => setCartOpen(true)} className="bg-white w-14 h-14 rounded-2xl shadow-xl flex items-center justify-center text-brand-600 border border-white">
-                                <i className="fas fa-shopping-basket"></i>
-                                {cart.length > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white w-5 h-5 rounded-full text-[9px] font-bold flex items-center justify-center border-2 border-white">{cart.length}</span>}
+                            <button onClick={() => setCartOpen(true)} className="relative p-2 group">
+                                <i className="fa-light fa-bag-shopping text-2xl"></i>
+                                {cart.length > 0 && <span className="absolute -top-1 -right-1 bg-luxury-900 text-white w-4 h-4 rounded-full text-[8px] flex items-center justify-center animate-bounce">{cart.length}</span>}
                             </button>
                         </div>
                     </header>
 
-                    {lastOrderId && <OrderTracker fb={fb} orderId={lastOrderId} />}
-
-                    <main className="px-6 pt-6 max-w-5xl mx-auto w-full flex-1">
-                        {!storeStatus.isOpen && <div className="bg-slate-900 text-white p-6 rounded-[2rem] mb-8 text-center uppercase font-black text-xs">Boutique Fermée 😴</div>}
-                        
-                        {products.length === 0 ? (
-                            <div className="text-center py-20 text-slate-300 font-bold uppercase text-xs tracking-widest">Menu en cours de préparation...</div>
-                        ) : (
-                            <div className="grid grid-cols-1 gap-6">
-                                {products.map(p => (
-                                    <div key={p.id} className="bg-white rounded-[2.5rem] p-5 shadow-xl flex items-center gap-4 border border-white">
-                                        <div className="w-16 h-16 bg-amber-50 rounded-2xl flex-shrink-0 flex items-center justify-center text-3xl">🥖</div>
-                                        <div className="flex-1">
-                                            <h3 className="font-black text-slate-800 text-lg leading-tight uppercase tracking-tighter">{p.name}</h3>
-                                            <p className="text-brand-500 font-black text-sm">{p.price.toLocaleString()} F</p>
+                    <main className="px-8 py-12 flex-1 max-w-4xl mx-auto w-full">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                            {products.map(p => (
+                                <div key={p.id} className={`group flex flex-col border-b border-luxury-900/5 pb-10 ${p.stock <= 0 ? 'opacity-40' : ''}`}>
+                                    <div className="flex justify-between items-start mb-4">
+                                        <div>
+                                            <h3 className="font-serif text-2xl font-bold uppercase tracking-tight mb-1">{p.name}</h3>
+                                            <p className="text-[10px] uppercase font-black text-gold-600 tracking-widest">
+                                                {p.stock > 0 ? (p.stock <= 5 ? `🔥 Plus que ${p.stock} !` : `${p.stock} en cuisine`) : "Épuisé"}
+                                            </p>
                                         </div>
-                                        <button disabled={!storeStatus.isOpen || p.stock <= 0} onClick={() => setCart([...cart, {...p, qty: 1}])} className="bg-brand-500 text-white w-12 h-12 rounded-2xl shadow-lg flex items-center justify-center active:scale-90 transition-all">
-                                            <i className="fas fa-plus"></i>
-                                        </button>
+                                        <span className="font-serif text-xl italic">{p.price.toLocaleString()} F</span>
                                     </div>
-                                ))}
-                            </div>
-                        )}
+                                    <button 
+                                        disabled={p.stock <= 0 || !storeStatus.isOpen}
+                                        onClick={() => setCart([...cart, {...p, qty: 1}])}
+                                        className="w-full border border-luxury-900 py-4 text-[10px] uppercase font-bold tracking-[0.3em] hover:bg-luxury-900 hover:text-white transition-all duration-500 disabled:opacity-0"
+                                    >
+                                        Sélectionner
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
                     </main>
 
                     {cartOpen && (
                         <div className="fixed inset-0 z-[100] flex justify-end">
-                            <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-md" onClick={() => setCartOpen(false)}></div>
-                            <div className="relative bg-white w-full max-w-md h-full flex flex-col p-8 rounded-l-[3rem] shadow-2xl overflow-y-auto">
-                                <h2 className="font-black text-2xl mb-8 italic uppercase tracking-tighter">Mon Panier</h2>
-                                <div className="flex-1 space-y-4">
-                                    {cart.map((i, idx) => <div key={idx} className="flex justify-between font-bold text-sm bg-slate-50 p-3 rounded-xl"><span>1x {i.name}</span><span>{i.price} F</span></div>)}
+                            <div className="absolute inset-0 bg-luxury-900/60 backdrop-blur-md" onClick={() => setCartOpen(false)}></div>
+                            <div className="relative bg-white w-full max-w-md h-full p-12 flex flex-col animate-premium">
+                                <h2 className="font-serif text-3xl font-bold italic mb-12">Ma Sélection</h2>
+                                <div className="flex-1 overflow-y-auto space-y-6">
+                                    {cart.map((i, idx) => (
+                                        <div key={idx} className="flex justify-between border-b pb-4">
+                                            <span className="font-serif text-lg">{i.name}</span>
+                                            <span className="font-serif font-bold">{i.price} F</span>
+                                        </div>
+                                    ))}
                                 </div>
-                                <div className="mt-6 pt-6 border-t space-y-4">
-                                    <div className="flex justify-between font-black text-brand-600 text-xl"><span>Total</span><span>{total} F</span></div>
-                                    <input id="cn" placeholder="Votre Nom" className="w-full p-4 bg-slate-100 rounded-2xl font-bold outline-none" />
-                                    <input id="ca" placeholder="Quartier précis" className="w-full p-4 bg-slate-100 rounded-2xl font-bold outline-none" />
-                                    <label className="flex items-center gap-3 bg-amber-50 p-4 rounded-2xl border border-amber-200">
-                                        <input type="checkbox" id="cy" className="w-5 h-5 accent-brand-600" />
-                                        <span className="text-[9px] font-black text-amber-800 uppercase leading-none">Je paie mon Yango moi-même</span>
-                                    </label>
-                                    <button 
-                                        onClick={() => {
-                                            const name = document.getElementById('cn').value;
-                                            const address = document.getElementById('ca').value;
-                                            const confirm = document.getElementById('cy').checked;
-                                            if(!name || !address || !confirm) return alert("Remplissez tout svp !");
-                                            handleOrder({name, address});
-                                        }}
-                                        disabled={loading}
-                                        className="w-full bg-slate-900 text-white p-5 rounded-[2rem] font-black uppercase text-xs tracking-widest shadow-2xl"
-                                    >
-                                        {loading ? "ENVOI EN COURS..." : "VALIDER SANS APPELER"}
-                                    </button>
+                                <div className="mt-8 pt-8 space-y-4">
+                                    <div className="flex justify-between font-serif text-2xl font-black mb-6 italic"><span>Total</span><span>{total} F</span></div>
+                                    <input id="cn" placeholder="Nom Complet" className="w-full border-b py-4 outline-none text-sm font-semibold" />
+                                    <input id="ca" placeholder="Quartier de livraison" className="w-full border-b py-4 outline-none text-sm font-semibold" />
+                                    <button onClick={() => handleOrder({name: document.getElementById('cn').value, addr: document.getElementById('ca').value})} className="w-full gold-gradient text-white py-6 font-bold uppercase text-[10px] tracking-[0.4em] shadow-2xl">Commander</button>
                                 </div>
                             </div>
-                        </div>
-                    )}
-
-                    {cart.length > 0 && !cartOpen && (
-                        <div className="fixed bottom-8 left-6 right-6 z-50 max-w-md mx-auto">
-                            <button onClick={() => setCartOpen(true)} className="w-full bg-slate-900 text-white p-6 rounded-[2.5rem] flex justify-between items-center shadow-2xl border-4 border-white font-black text-xs uppercase tracking-widest italic">
-                                <span>Voir le panier</span><span>{total.toLocaleString()} F</span>
-                            </button>
                         </div>
                     )}
                 </div>
             );
         }
 
-        const SuccessView = ({total, onBack}) => (
-            <div className="flex flex-col items-center justify-center h-screen p-8 text-center bg-white">
-                <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-3xl mb-6">✅</div>
-                <h2 className="text-2xl font-black text-slate-900 mb-6 uppercase tracking-tighter italic">C'est envoyé !</h2>
-                <a href={WAVE_LINK} target="_blank" className="w-full bg-[#1dc3ff] text-white p-7 rounded-[2.5rem] font-black text-lg shadow-xl animate-wave flex flex-col items-center justify-center mb-6">
-                    <span>PAYER {total.toLocaleString()} F VIA WAVE</span>
-                </a>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">⚠️ Payez Wave, envoyez la capture. Pas d'appel.</p>
-                <button onClick={onBack} className="mt-8 text-slate-300 font-black text-[10px] uppercase underline">Retour au menu</button>
-            </div>
-        );
-
-        const OrderTracker = ({fb, orderId}) => {
-            const [order, setOrder] = React.useState(null);
-            React.useEffect(() => {
-                if(!orderId) return;
-                return fb.onSnapshot(fb.doc(fb.db, "orders", orderId), d => setOrder(d.data()));
-            }, [orderId]);
-            if(!order || order.status === "Livrée") return null;
+        const SuccessView = ({order, onBack}) => {
+            const downloadReceipt = () => {
+                const element = document.getElementById('pdf-receipt');
+                html2pdf().from(element).set({ margin: 1, filename: `Reçu_Déclice_${order.id}.pdf`, jsPDF: { unit: 'in', format: 'letter' } }).save();
+            };
             return (
-                <div className="mx-6 mt-4 p-6 bg-white rounded-[2.5rem] shadow-2xl border-2 border-brand-500/20">
-                    <div className="flex justify-between items-center px-4 mb-4">
-                        {[{id:"Reçue", i:"📩"}, {id:"Cuisine", i:"👨‍🍳"}, {id:"Prêt", i:"🥖"}].map(s => (
-                            <div key={s.id} className={`flex flex-col items-center gap-1 ${order.status === s.id ? 'opacity-100 scale-125' : 'opacity-10'}`}>
-                                <span className="text-xl">{s.i}</span><span className="text-[8px] font-black uppercase">{s.id}</span>
-                            </div>
-                        ))}
+                <div className="min-h-screen bg-luxury-50 flex flex-col items-center py-20 px-8 animate-premium">
+                    <div id="pdf-receipt" className="bg-white p-12 shadow-2xl w-full max-w-sm text-center mb-10 border border-luxury-900/5">
+                        <h2 className="font-serif text-3xl font-black italic mb-2">Déclice</h2>
+                        <p className="text-[8px] uppercase tracking-[0.5em] text-gold-600 mb-10 border-b pb-4 font-bold">Abidjan Maison de Qualité</p>
+                        <div className="text-left space-y-4 mb-10 text-[11px] font-bold uppercase tracking-widest opacity-60">
+                            <p>Commande: #{order?.id}</p>
+                            <p>Client: {order?.customer?.name}</p>
+                            <div className="h-px bg-luxury-900/5 my-4"></div>
+                            {order?.items.map((i,idx)=><div key={idx} className="flex justify-between italic"><span>{i.name}</span><span>{i.price} F</span></div>)}
+                            <div className="h-px bg-luxury-900/5 my-4"></div>
+                            <div className="flex justify-between text-lg text-luxury-900 opacity-100 italic"><span>Total</span><span>{order?.total} F</span></div>
+                        </div>
                     </div>
-                    {order.status === "Prêt" && (
-                        <a href={SHOP_LOCATION} target="_blank" className="block w-full bg-blue-600 text-white text-center py-4 rounded-[2rem] font-black text-[10px] uppercase shadow-lg animate-pulse">Lancer Yango vers Pain Farci 225</a>
-                    )}
+                    <div className="flex flex-col gap-4 w-full max-w-sm">
+                        <button onClick={downloadReceipt} className="w-full bg-luxury-900 text-white py-5 text-[10px] font-bold uppercase tracking-widest">Télécharger le reçu</button>
+                        <a href={WAVE_LINK} target="_blank" className="w-full gold-gradient text-white py-5 text-center text-[10px] font-bold uppercase tracking-widest shadow-xl">Régler via Wave</a>
+                        <button onClick={onBack} className="text-[10px] font-bold opacity-30 mt-4 underline uppercase">Retour au menu</button>
+                    </div>
                 </div>
             );
         };
 
-        const AdminView = ({fb, storeStatus, signOut}) => {
-            const [ords, setOrds] = React.useState([]);
+        const AdminView = ({fb, products, storeStatus}) => {
+            const [orders, setOrders] = React.useState([]);
+            const todayStr = new Date().toISOString().split('T')[0];
+
             React.useEffect(() => {
-                return fb.onSnapshot(fb.query(fb.ordersCol, fb.orderBy("createdAt", "desc")), s => setOrds(s.docs.map(d=>({id:d.id, ...d.data()}))));
+                const q = fb.query(fb.ordersCol, fb.orderBy("createdAt", "desc"));
+                return fb.onSnapshot(q, s => setOrders(s.docs.map(d=>({id:d.id, ...d.data()}))));
             }, []);
+
+            // Filtre automatique pour le reset de minuit (n'affiche que les stats d'aujourd'hui)
+            const ordersToday = orders.filter(o => o.dateStr === todayStr);
+            const revenueToday = ordersToday.reduce((s,o) => s + o.total, 0);
+            const soldToday = {};
+            ordersToday.forEach(o => o.items.forEach(i => soldToday[i.name] = (soldToday[i.name] || 0) + 1));
+
+            const sendWhatsAppReport = () => {
+                let msg = `📝 *BILAN DÉCLICE - ${new Date().toLocaleDateString()}*\n\n`;
+                msg += `💰 CA Total: *${revenueToday.toLocaleString()} F*\n`;
+                msg += `📦 Commandes: *${ordersToday.length}*\n\n`;
+                msg += `*DÉTAIL DES VENTES :*\n`;
+                products.forEach(p => msg += `• ${p.name}: ${soldToday[p.name] || 0} vendus (Stock: ${p.stock})\n`);
+                window.open(`https://wa.me/${SELLER_PHONE}?text=${encodeURIComponent(msg)}`);
+            };
+
             return (
-                <div className="min-h-screen bg-slate-100 flex flex-col">
-                    <header className="bg-slate-900 text-white p-6 flex justify-between items-center"><h1 className="font-black italic text-xs uppercase italic">Admin Déclice</h1><button onClick={signOut} className="bg-red-600 px-4 py-1 rounded-full text-[9px] font-black">Sortir</button></header>
-                    <div className="p-4 bg-white border-b flex gap-4">
-                        <button onClick={()=>fb.updateDoc(fb.settingsDoc, {isOpen: !storeStatus.isOpen})} className={`flex-1 p-5 rounded-[2rem] font-black text-[10px] uppercase shadow-xl ${storeStatus.isOpen ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                            {storeStatus.isOpen ? "🟢 Boutique Ouverte" : "🔴 Boutique Fermée"}
-                        </button>
-                    </div>
-                    <main className="p-4 space-y-4">
-                        {ords.filter(o=>o.status!=="Livrée").map(o => (
-                            <div key={o.id} className="bg-white p-6 rounded-[2.5rem] shadow-sm border-l-8 border-brand-500">
-                                <p className="font-black uppercase">{o.customer?.name} - {o.total} F</p>
-                                <div className="grid grid-cols-3 gap-2 mt-4">
-                                    <button onClick={()=>fb.updateDoc(fb.doc(fb.db, "orders", o.id), {status:"Cuisine"})} className="bg-amber-500 text-white p-2 rounded-xl text-[8px] font-black uppercase">Cuisine</button>
-                                    <button onClick={()=>fb.updateDoc(fb.doc(fb.db, "orders", o.id), {status:"Prêt"})} className="bg-green-600 text-white p-2 rounded-xl text-[8px] font-black uppercase">Prêt</button>
-                                    <button onClick={()=>fb.updateDoc(fb.doc(fb.db, "orders", o.id), {status:"Livrée"})} className="bg-slate-900 text-white p-2 rounded-xl text-[8px] font-black uppercase">Fini</button>
+                <div className="min-h-screen bg-slate-50 flex flex-col font-sans animate-premium">
+                    <header className="bg-luxury-900 text-white p-6 flex justify-between items-center shadow-2xl">
+                        <h1 className="font-serif italic text-xl">Dashboard Admin</h1>
+                        <button onClick={sendWhatsAppReport} className="bg-gold-500 px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg">Fin de Journée</button>
+                    </header>
+
+                    <main className="p-8 max-w-6xl mx-auto w-full space-y-12">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                            <div className="bg-white p-8 shadow-sm border-t-4 border-gold-500">
+                                <p className="text-[10px] uppercase font-black opacity-30 mb-2">Chiffre d'Affaires</p>
+                                <p className="font-serif text-3xl font-black">{revenueToday.toLocaleString()} F</p>
+                            </div>
+                            <div className="bg-white p-8 shadow-sm border-t-4 border-luxury-900">
+                                <p className="text-[10px] uppercase font-black opacity-30 mb-2">Commandes du Jour</p>
+                                <p className="font-serif text-3xl font-black">{ordersToday.length}</p>
+                            </div>
+                            <div className="bg-white p-8 shadow-sm border-t-4 border-slate-200">
+                                <p className="text-[10px] uppercase font-black opacity-30 mb-2">Statut Boutique</p>
+                                <button onClick={()=>fb.updateDoc(fb.settingsDoc, {isOpen: !storeStatus.isOpen})} className="text-sm font-bold underline uppercase">{storeStatus.isOpen ? "🟢 Ouvert" : "🔴 Fermé"}</button>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                            <div className="space-y-6">
+                                <h3 className="text-[10px] uppercase font-black tracking-widest opacity-40 italic">Gestion des Pains & Stocks</h3>
+                                <div className="bg-white p-8 shadow-sm space-y-8">
+                                    {products.map(p => (
+                                        <div key={p.id} className="flex items-center justify-between border-b pb-6 last:border-0">
+                                            <div>
+                                                <p className="font-bold text-sm uppercase">{p.name}</p>
+                                                <p className="text-[10px] font-bold text-gold-600 mt-1 uppercase tracking-tighter">Vendus aujourd'hui : {soldToday[p.name] || 0}</p>
+                                            </div>
+                                            <div className="flex items-center gap-4 bg-slate-50 p-2 rounded-xl">
+                                                <button onClick={()=>fb.updateDoc(fb.doc(fb.db, "products", p.id), {stock: fb.increment(-1)})} className="w-10 h-10 border rounded-full font-bold hover:bg-black hover:text-white">-</button>
+                                                <span className="font-serif text-xl font-black w-8 text-center">{p.stock}</span>
+                                                <button onClick={()=>fb.updateDoc(fb.doc(fb.db, "products", p.id), {stock: fb.increment(1)})} className="w-10 h-10 border rounded-full font-bold hover:bg-black hover:text-white">+</button>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
-                        ))}
-                    </main>
-                </div>
-            );
-        };
 
-        const LoginView = ({fb}) => (
-            <div className="h-screen flex items-center justify-center p-6 bg-slate-50">
-                <div className="bg-white p-10 rounded-[3rem] shadow-2xl w-full max-w-sm text-center">
-                    <h2 className="text-2xl font-black mb-8 uppercase gradient-text italic tracking-tighter">Admin Login</h2>
-                    <input id="e" type="email" placeholder="Email" className="w-full p-4 bg-slate-50 rounded-2xl mb-4 font-bold outline-none border-none text-sm"/>
-                    <input id="p" type="password" placeholder="Pass" className="w-full p-4 bg-slate-50 rounded-2xl mb-8 font-bold outline-none border-none text-sm"/>
-                    <button onClick={()=>fb.signInWithEmailAndPassword(fb.auth, document.getElementById('e').value, document.getElementById('p').value)} className="w-full bg-slate-900 text-white p-5 rounded-[2rem] font-black uppercase text-xs tracking-widest shadow-xl">Entrer</button>
-                </div>
-            </div>
-        );
-
-        // --- DÉMARRAGE ---
-        const init = () => {
-            const root = ReactDOM.createRoot(document.getElementById('root'));
-            root.render(<App />);
-        };
-
-        if (window.fb) init();
-        else window.addEventListener
+                            <div className="space-y-6">
+                                <h3 className="text-[10px] uppercase font-black tracking-widest opacity-40 italic">Commandes en Attente</h3>
+                                <div className="space-y-4">
+                                    {orders.filter(o => o.status !== "Livrée").map(o => (
+                                        <div key={o.id} className="bg-white p-6 shadow-sm border-l-4 border-gold-500 flex justify-between items-center">
+                                            <div>
+                                                <p className="font-black text-xs uppercase mb-1">{o.customer?.name}</p>
+                                                <p className="text-[10px] font-medium opacity-40 mb-4">{o.customer?.addr}</p>
+                                                <div className="flex gap-2">
+                                                    {["Cuisine", "Prêt", "Livrée"].map(st => (
+                                                        <button key={st} onClick={()=>fb.updateDoc(fb.doc(fb.db, "orders", o.id), {status:st})} className={`px-4 py-2 text-[8px] font-black uppercase border transition-all ${o.status===st ? 'bg-luxury-900 text-white' : 'bg-white'}

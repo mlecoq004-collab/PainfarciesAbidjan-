@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="fr" class="h-full scroll-smooth">
+<head>
+    <meta charset="UTF-8" />
+    <title>Pain Farci Déclice – Abidjan</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#ff6600">
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Pain Farci">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: { extend: { colors: { orange: '#ff6600', green: '#28a745' } } }
+        };
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getFirestore, collection, doc, updateDoc, increment, onSnapshot, addDoc, serverTimestamp, runTransaction, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+        const firebaseConfig = {
+          apiKey: "AIzaSyD924DTIFmfD8KQtmdq7OjfZT4jnVS97kc",
+          authDomain: "pain-farci-abidjan.firebaseapp.com",
+          projectId: "pain-farci-abidjan",
+          storageBucket: "pain-farci-abidjan.firebasestorage.app",
+          messagingSenderId: "832484741268",
+          appId: "1:832484741268:web:18baf4a65a003fa3fca481",
+          measurementId: "G-4STB8KX58Y"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        window.fb = { 
+            db, auth: getAuth(app), productsCol: collection(db, "products"), 
+            ordersCol: collection(db, "orders"), onSnapshot, doc, updateDoc, increment, addDoc, serverTimestamp, runTransaction, signOut, signInWithEmailAndPassword, onAuthStateChanged, query, orderBy 
+        };
+    </script>
+</head>
+<body class="h-full bg-gray-50 text-gray-900 antialiased">
+    <div id="root" class="h-full"></div>
+
+    <script type="text/babel">
+        const { db, auth, productsCol, ordersCol, onSnapshot, doc, updateDoc, increment, addDoc, serverTimestamp, runTransaction, signOut, signInWithEmailAndPassword, onAuthStateChanged, query, orderBy } = window.fb;
+
+        const SELLER_PHONE = "2250757618108"; 
+
+        // --- HOOK PANIER ---
+        const useCart = () => {
+            const [items, setItems] = React.useState([]);
+            const addItem = (p) => {
+                setItems(prev => {
+                    const exist = prev.find(i => i.id === p.id);
+                    if (exist) return prev.map(i => i.id === p.id ? {...i, qty: i.qty + 1} : i);
+                    return [...prev, {...p, qty: 1}];
+                });
+            };
+            const total = items.reduce((s, i) => s + (i.price * i.qty), 0);
+            return { items, addItem, total, clear: () => setItems([]) };
+        };
+
+        // --- COMPOSANTS CLIENT ---
+        function ProductCard({product, onAdd}) {
+            const isOut = product.stock <= 0;
+            return (
+                <div className="bg-white rounded-2xl shadow-sm p-4 flex flex-col border border-gray-100 transition-all active:scale-95">
+                    <div className="text-4xl mb-2">{product.category === 'Boisson' ? '🥤' : '🥖'}</div>
+                    <h3 className="font-bold text-lg">{product.name}</h3>
+                    <p className="text-orange-600 font-black text-xl">{product.price} FCFA</p>
+                    <p className={`text-sm mb-4 ${isOut ? 'text-red-500' : 'text-green-600'}`}>
+                        {isOut ? 'Rupture de stock' : `Disponible : ${product.stock}`}
+                    </p>
+                    <button disabled={isOut} onClick={() => onAdd(product)}
+                        className="mt-auto bg-orange-500 text-white py-3 rounded-xl font-bold disabled:bg-gray-200">
+                        {isOut ? 'Épuisé' : 'Ajouter au panier'}
+                    </button>
+                </div>
+            );
+        }
+
+        function CartDrawer({cart, isOpen, onClose}) {
+            const [form, setForm] = React.useState({name: "", phone: "", address: "", gps: ""});
+            const [loading, setLoading] = React.useState(false);
+
+            const getLoc = () => {
+                navigator.geolocation.getCurrentPosition(p => {
+                    setForm({...form, gps: `https://www.google.com/maps?q=${p.coords.latitude},${p.coords.longitude}`});
+                    alert("📍 Position GPS capturée pour le livreur !");
+                }, () => alert("Veuillez activer votre GPS"));
+            };
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                try {
+                    await runTransaction(db, async (transaction) => {
+                        for (const item of cart.items) {
+                            const pRef = doc(db, "products", item.id);
+                            const pSnap = await transaction.get(pRef);
+                            if (pSnap.data().stock < item.qty) throw "Un article vient d'être épuisé !";
+                            transaction.update(pRef, { stock: increment(-item.qty) });
+                        }
+                        await addDoc(ordersCol, {
+                            customer: form, items: cart.items, total: cart.total,
+                            status: "Reçue", createdAt: serverTimestamp()
+                        });
+                    });
+
+                    const msg = encodeURIComponent(`🥖 *COMMANDE PAIN FARCI*\nClient: ${form.name}\nTotal: ${cart.total} FCFA\n📍 GPS: ${form.gps}`);
+                    window.open(`https://wa.me/${SELLER_PHONE}?text=${msg}`);
+                    cart.clear(); onClose(); alert("Commande validée !");
+                } catch (err) { alert(err); }
+                setLoading(false);
+            };
+
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 bg-black/60 z-[100] flex justify-end">
+                    <div className="bg-white w-full max-w-md h-full p-6 overflow-y-auto">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-2xl font-bold">Mon Panier</h2>
+                            <button onClick={onClose} className="text-3xl text-gray-400">×</button>
+                        </div>
+                        {cart.items.map(i => (
+                            <div key={i.id} className="flex justify-between py-2 border-b">{i.qty}x {i.name} <b>{i.price*i.qty} FCFA</b></div>
+                        ))}
+                        <div className="text-xl font-black my-4 text-orange-600">Total : {cart.total} FCFA</div>
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <input placeholder="Nom" required className="w-full p-3 bg-gray-100 rounded-lg" onChange={e=>setForm({...form, name:e.target.value})}/>
+                            <input placeholder="Téléphone" required className="w-full p-3 bg-gray-100 rounded-lg" onChange={e=>setForm({...form, phone:e.target.value})}/>
+                            <input placeholder="Adresse" required className="w-full p-3 bg-gray-100 rounded-lg" onChange={e=>setForm({...form, address:e.target.value})}/>
+                            <button type="button" onClick={getLoc} className="w-full py-2 border border-blue-500 text-blue-600 rounded-lg italic">📍 Envoyer GPS (Yango)</button>
+                            <button type="submit" disabled={loading} className="w-full bg-green-600 text-white p-4 rounded-xl font-bold">Confirmer</button>
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- DASHBOARD ADMIN ---
+        function AdminDashboard() {
+            const [prods, setProds] = React.useState([]);
+            const [ords, setOrds] = React.useState([]);
+
+            React.useEffect(() => {
+                const unsubP = onSnapshot(productsCol, s => setProds(s.docs.map(d=>({id:d.id, ...d.data()}))));
+                const unsubO = onSnapshot(query(ordersCol, orderBy("createdAt", "desc")), s => setOrds(s.docs.map(d=>({id:d.id, ...d.data()}))));
+                return () => { unsubP(); unsubO(); };
+            }, []);
+
+            return (
+                <div className="min-h-screen bg-gray-100 p-4">
+                    <div className="flex justify-between items-center mb-6">
+                        <h1 className="font-bold text-xl uppercase">Gestion Vendeuse</h1>
+                        <button onClick={() => signOut(auth)} className="text-red-500 font-bold underline">Déconnexion</button>
+                    </div>
+                    <div className="grid gap-4 mb-10">
+                        <h2 className="font-bold">Mise à jour Stocks</h2>
+                        {prods.map(p => (
+                            <div key={p.id} className="bg-white p-3 rounded-xl flex justify-between shadow-sm">
+                                <span>{p.name} (<b>{p.stock}</b>)</span>
+                                <div className="flex gap-4">
+                                    <button onClick={()=>updateDoc(doc(db, "products", p.id), {stock: increment(-1)})} className="bg-red-100 px-3 rounded font-bold">-</button>
+                                    <button onClick={()=>updateDoc(doc(db, "products", p.id), {stock: increment(1)})} className="bg-green-100 px-3 rounded font-bold">+</button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="space-y-4">
+                        <h2 className="font-bold">Commandes Récentes</h2>
+                        {ords.map(o => (
+                            <div key={o.id} className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-orange-500">
+                                <p className="font-bold">{o.customer?.name} - {o.total} FCFA</p>
+                                <p className="text-xs text-gray-500">{o.items?.map(i=>`${i.qty}x ${i.name}`).join(", ")}</p>
+                                <a href={o.customer?.gps} target="_blank" className="text-blue-500 text-xs underline mt-2 inline-block italic font-bold">🗺️ GPS LIVREUR YANGO</a>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        // --- APP ROOT ---
+        function App() {
+            const [user, setUser] = React.useState(null);
+            const [products, setProducts] = React.useState([]);
+            const [cartOpen, setCartOpen] = React.useState(false);
+            const cart = useCart();
+
+            React.useEffect(() => {
+                onAuthStateChanged(auth, u => setUser(u));
+                onSnapshot(productsCol, s => setProducts(s.docs.map(d=>({id:d.id, ...d.data()}))));
+            }, []);
+
+            if (window.location.hash === "#admin") {
+                if (!user) return (
+                    <div className="flex flex-col items-center justify-center h-screen bg-gray-50 p-6">
+                        <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-sm">
+                            <h2 className="text-2xl font-black mb-6">ESPACE VENDEUSE</h2>
+                            <input id="email" type="email" placeholder="Email" className="w-full border p-4 mb-3 rounded-xl outline-none"/>
+                            <input id="pass" type="password" placeholder="Pass" className="w-full border p-4 mb-6 rounded-xl outline-none"/>
+                            <button onClick={() => signInWithEmailAndPassword(auth, document.getElementById('email').value, document.getElementById('pass').value).catch(e=>alert("Erreur de connexion"))} className="w-full bg-orange-600 text-white p-4 rounded-xl font-bold">Connexion</button>
+                        </div>
+                    </div>
+                );
+                return <AdminDashboard />;
+            }
+
+            return (
+                <div className="flex flex-col min-h-screen">
+                    <header className="bg-orange-600 text-white p-4 sticky top-0 z-50 flex justify-between items-center shadow-lg">
+                        <h1 className="font-black text-xl italic tracking-tighter">🥖 PAIN FARCI DÉCLICE</h1>
+                        <button onClick={() => setCartOpen(true)} className="bg-white text-orange-600 px-5 py-2 rounded-full font-black shadow-md flex items-center gap-2">
+                            🛒 <span className="bg-orange-100 px-2 rounded-lg text-sm">{cart.items.length}</span>
+                        </button>
+                    </header>
+                    <main className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 flex-1 max-w-5xl mx-auto w-full">
+                        {products.map(p => <ProductCard key={p.id} product={p} onAdd={cart.addItem} />)}
+                    </main>
+                    <CartDrawer cart={cart} isOpen={cartOpen} onClose={() => setCartOpen(false)} />
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+
+        // --- PWA SERVICE WORKER REGISTRATION ---
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW registration failed', err));
+            });
+        }
+    </script>
+</body>
+</html>
+

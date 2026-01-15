@@ -47,92 +47,264 @@
         try {
             const app = initializeApp(firebaseConfig);
             const db = getFirestore(app);
+            const auth = getAuth(app);
+            
             window.fb = { 
-                db, auth: getAuth(app), productsCol: collection(db, "products"), ordersCol: collection(db, "orders"), 
-                settingsDoc: doc(db, "settings", "store"), onSnapshot, doc, updateDoc, increment, setDoc, 
-                serverTimestamp, runTransaction, signOut, signInWithEmailAndPassword, onAuthStateChanged, query, orderBy, getDoc 
+                app, db, auth, 
+                productsCol: collection(db, "products"), 
+                ordersCol: collection(db, "orders"), 
+                settingsDoc: doc(db, "settings", "store"), 
+                onSnapshot, doc, updateDoc, increment, setDoc, 
+                serverTimestamp, runTransaction, signOut, 
+                signInWithEmailAndPassword, onAuthStateChanged, 
+                query, orderBy, getDoc, collection 
             };
+            console.log('Firebase initialisé');
             window.dispatchEvent(new Event('fb-ready'));
         } catch (err) {
-            document.getElementById('root').innerHTML = `<div class="p-10 text-red-500 font-bold">Erreur Firebase: ${err.message}</div>`;
+            console.error('Erreur Firebase:', err);
+            document.getElementById('root').innerHTML = `
+                <div class="p-10 text-red-500 font-bold text-center">
+                    Erreur de connexion. Vérifiez votre internet.<br>
+                    <small>${err.message}</small>
+                </div>`;
         }
     </script>
 
     <script type="text/babel">
         const SELLER_PHONE = "2250757618108";
         const WAVE_LINK = "https://pay.wave.com/m/M_ci_CmPu37RXsPDN/c/ci/";
-        const SHOP_MAPS = "Https://maps.app.goo.gl/kbBVGu5LNdJDQaDY6";
+        const SHOP_MAPS = "https://maps.app.goo.gl/kbBVGu5LNdJDQaDY6";
+
+        // Fonction pour échapper les entrées
+        const escapeInput = (str) => {
+            if (!str) return '';
+            return str
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#x27;');
+        };
 
         function MainApp() {
-            const { db, auth, productsCol, ordersCol, settingsDoc, onSnapshot, doc, updateDoc, increment, setDoc, serverTimestamp, runTransaction, query, orderBy } = window.fb;
-            
             const [products, setProducts] = React.useState([]);
             const [store, setStore] = React.useState({ isOpen: true });
-            const [cart, setCart] = React.useState([]);
+            const [cart, setCart] = React.useState({}); // Changé pour un objet {productId: quantity}
             const [user, setUser] = React.useState(null);
             const [orderId, setOrderId] = React.useState(localStorage.getItem('lastOrderId'));
             const [view, setView] = React.useState('home');
+            const [loading, setLoading] = React.useState(true);
 
             React.useEffect(() => {
-                onAuthStateChanged(auth, u => setUser(u));
-                onSnapshot(settingsDoc, d => d.exists() && setStore(d.data()));
-                return onSnapshot(query(productsCol, orderBy("name")), s => {
-                    setProducts(s.docs.map(d => ({id: d.id, ...d.data()})));
+                if (!window.fb) {
+                    console.error('Firebase non initialisé');
+                    return;
+                }
+
+                const { auth, settingsDoc, productsCol, onSnapshot, onAuthStateChanged, query, orderBy } = window.fb;
+                
+                // Écouter l'état d'authentification
+                const unsubscribeAuth = onAuthStateChanged(auth, (u) => {
+                    setUser(u);
                 });
+
+                // Écouter les paramètres du magasin
+                const unsubscribeStore = onSnapshot(settingsDoc, (doc) => {
+                    if (doc.exists()) {
+                        setStore(doc.data());
+                    }
+                });
+
+                // Écouter les produits
+                const unsubscribeProducts = onSnapshot(
+                    query(productsCol, orderBy("name")), 
+                    (snapshot) => {
+                        const prods = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
+                        setProducts(prods);
+                        setLoading(false);
+                    },
+                    (error) => {
+                        console.error('Erreur produits:', error);
+                        setLoading(false);
+                    }
+                );
+
+                return () => {
+                    unsubscribeAuth();
+                    unsubscribeStore();
+                    unsubscribeProducts();
+                };
             }, []);
 
-            const total = cart.reduce((acc, curr) => acc + curr.price, 0);
+            // Calculer le total
+            const total = React.useMemo(() => {
+                return Object.entries(cart).reduce((acc, [productId, quantity]) => {
+                    const product = products.find(p => p.id === productId);
+                    return acc + (product ? product.price * quantity : 0);
+                }, 0);
+            }, [cart, products]);
 
-            const handleOrder = async () => {
-                const name = prompt("Votre Nom complet ?");
-                const addr = prompt("Votre Quartier précis ?");
-                if(!name || !addr) return alert("Infos obligatoires !");
-
-                const newId = "CMD-" + Date.now();
-                try {
-                    await runTransaction(db, async (t) => {
-                        const productSnaps = [];
-                        for (const item of cart) {
-                            const pRef = doc(db, "products", item.id);
-                            const pSnap = await t.get(pRef);
-                            if (pSnap.data().stock <= 0) throw "Stock épuisé";
-                            productSnaps.push(pRef);
-                        }
-                        productSnaps.forEach(ref => t.update(ref, {stock: increment(-1)}));
-                        t.set(doc(ordersCol, newId), {
-                            customer: {name, address: addr},
-                            items: cart, total, status: "Reçue", createdAt: serverTimestamp()
-                        });
-                    });
-                    
-                    window.open(`https://wa.me/${SELLER_PHONE}?text=${encodeURIComponent("🥖 COMMANDE: " + name + "\nTotal: " + total + "F")}`);
-                    localStorage.setItem('lastOrderId', newId);
-                    setOrderId(newId); setCart([]); setView('success');
-                } catch(e) { alert("Erreur stock !"); }
+            // Ajouter au panier
+            const addToCart = (product) => {
+                if (!store.isOpen || product.stock <= 0) return;
+                
+                setCart(prev => ({
+                    ...prev,
+                    [product.id]: (prev[product.id] || 0) + 1
+                }));
             };
 
+            // Retirer du panier
+            const removeFromCart = (productId) => {
+                setCart(prev => {
+                    const newCart = { ...prev };
+                    if (newCart[productId] > 1) {
+                        newCart[productId]--;
+                    } else {
+                        delete newCart[productId];
+                    }
+                    return newCart;
+                });
+            };
+
+            // Convertir le panier en array pour la commande
+            const cartArray = React.useMemo(() => {
+                return Object.entries(cart).map(([productId, quantity]) => {
+                    const product = products.find(p => p.id === productId);
+                    return product ? {
+                        ...product,
+                        quantity,
+                        price: product.price * quantity
+                    } : null;
+                }).filter(Boolean);
+            }, [cart, products]);
+
+            const handleOrder = async () => {
+                if (cartArray.length === 0) return;
+                
+                const name = prompt("Votre Nom complet ?");
+                const addr = prompt("Votre Quartier précis ?");
+                
+                if (!name || !addr) {
+                    alert("Les informations sont obligatoires !");
+                    return;
+                }
+
+                // Nettoyer les entrées
+                const cleanName = escapeInput(name.trim());
+                const cleanAddr = escapeInput(addr.trim());
+
+                const newId = "CMD-" + Date.now();
+                
+                try {
+                    const { db, runTransaction, doc, ordersCol, serverTimestamp } = window.fb;
+                    
+                    await runTransaction(db, async (transaction) => {
+                        // Vérifier et mettre à jour les stocks
+                        for (const item of cartArray) {
+                            const productRef = doc(db, "products", item.id);
+                            const productSnap = await transaction.get(productRef);
+                            
+                            if (!productSnap.exists()) {
+                                throw new Error(`Produit ${item.name} non trouvé`);
+                            }
+                            
+                            const currentStock = productSnap.data().stock;
+                            if (currentStock < item.quantity) {
+                                throw new Error(`Stock insuffisant pour ${item.name}. Disponible: ${currentStock}`);
+                            }
+                            
+                            // Mettre à jour le stock
+                            transaction.update(productRef, {
+                                stock: currentStock - item.quantity
+                            });
+                        }
+
+                        // Créer la commande
+                        transaction.set(doc(ordersCol, newId), {
+                            customer: {
+                                name: cleanName,
+                                address: cleanAddr
+                            },
+                            items: cartArray.map(item => ({
+                                id: item.id,
+                                name: item.name,
+                                price: item.price,
+                                quantity: item.quantity
+                            })),
+                            total: total,
+                            status: "Reçue",
+                            createdAt: serverTimestamp()
+                        });
+                    });
+
+                    // Ouvrir WhatsApp
+                    const whatsappMessage = encodeURIComponent(
+                        `🥖 NOUVELLE COMMANDE ${newId}\n` +
+                        `Nom: ${cleanName}\n` +
+                        `Quartier: ${cleanAddr}\n` +
+                        `Total: ${total}F\n` +
+                        `Items: ${cartArray.map(item => `${item.quantity}x ${item.name}`).join(', ')}`
+                    );
+                    
+                    window.open(`https://wa.me/${SELLER_PHONE}?text=${whatsappMessage}`, '_blank');
+                    
+                    // Réinitialiser
+                    localStorage.setItem('lastOrderId', newId);
+                    setOrderId(newId);
+                    setCart({});
+                    setView('success');
+                    
+                } catch (error) {
+                    console.error('Erreur commande:', error);
+                    alert(`Erreur: ${error.message || "Impossible de passer la commande"}`);
+                }
+            };
+
+            // Gestion admin
             if (window.location.hash === "#admin") {
-                return user ? <AdminUI fb={window.fb} store={store} signout={() => signOut(auth)} /> : <LoginUI auth={auth} signin={signInWithEmailAndPassword} />;
+                if (user) {
+                    return <AdminUI fb={window.fb} store={store} signout={() => window.fb.auth.signOut()} />;
+                }
+                return <LoginUI auth={window.fb.auth} signin={signInWithEmailAndPassword} />;
             }
 
-            if (view === 'success') return (
-                <div className="flex flex-col items-center justify-center h-screen p-6 text-center animate-pop">
-                    <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-3xl mb-6">✅</div>
-                    <h2 className="text-2xl font-black mb-6 uppercase italic tracking-tighter">C'est validé !</h2>
-                    <a href={WAVE_LINK} target="_blank" className="w-full bg-[#1dc3ff] text-white p-6 rounded-[2rem] font-black shadow-xl mb-4">PAYER VIA WAVE</a>
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest italic mb-8 px-4">Payez et envoyez la capture sur WhatsApp. On prépare déjà !</p>
-                    <button onClick={() => setView('home')} className="text-orange-500 font-black text-[10px] uppercase underline">Retour au menu</button>
-                </div>
-            );
+            // Vue succès
+            if (view === 'success') {
+                return (
+                    <div className="flex flex-col items-center justify-center h-screen p-6 text-center animate-pop">
+                        <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-3xl mb-6">
+                            <i className="fas fa-check"></i>
+                        </div>
+                        <h2 className="text-2xl font-black mb-6 uppercase italic tracking-tighter">Commande confirmée !</h2>
+                        <p className="text-gray-600 mb-8 text-sm">
+                            N°: <span className="font-bold">{orderId}</span><br/>
+                            Total: <span className="font-bold">{total}F</span>
+                        </p>
+                        <a href={WAVE_LINK} target="_blank" rel="noopener noreferrer" 
+                           className="w-full bg-[#1dc3ff] text-white p-6 rounded-[2rem] font-black shadow-xl mb-4 hover:opacity-90 transition-opacity">
+                            <i className="fas fa-money-bill-wave mr-2"></i> PAYER VIA WAVE
+                        </a>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest italic mb-8 px-4">
+                            Payez et envoyez la capture sur WhatsApp. On prépare déjà !
+                        </p>
+                        <button onClick={() => setView('home')} 
+                                className="text-orange-500 font-black text-[10px] uppercase underline hover:text-orange-600">
+                            Retour au menu
+                        </button>
+                    </div>
+                );
+            }
 
             return (
-                <div className="min-h-screen">
+                <div className="min-h-screen pb-24">
                     <header className="p-6 sticky top-0 z-50 glass border-b border-gray-100 flex justify-between items-center">
                         <div>
                             <h1 className="text-2xl font-black text-gray-900 tracking-tighter uppercase italic leading-none">Déclice</h1>
                             <p className="text-[8px] font-black text-orange-500 uppercase tracking-[0.3em]">Abidjan Express</p>
                         </div>
-                        <div className="bg-orange-100 px-3 py-1 rounded-full text-[8px] font-black text-orange-700 uppercase">
+                        <div className={`px-3 py-1 rounded-full text-[8px] font-black uppercase ${store.isOpen ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                             {store.isOpen ? "🟢 Ouvert" : "🔴 Fermé"}
                         </div>
                     </header>
@@ -140,24 +312,68 @@
                     {orderId && <OrderTracker fb={window.fb} orderId={orderId} />}
 
                     <main className="p-6 space-y-4 max-w-xl mx-auto">
-                        {products.length === 0 ? (
-                            <div className="py-20 text-center text-gray-300 font-black uppercase text-[10px] tracking-widest animate-pulse">Chargement...</div>
-                        ) : products.map(p => (
-                            <div key={p.id} className={`bg-white p-4 rounded-[2rem] shadow-xl flex items-center gap-4 border border-white transition-all active:scale-95 ${(!store.isOpen || p.stock <= 0) && 'opacity-50 grayscale'}`}>
-                                <div className="w-14 h-14 bg-orange-50 rounded-2xl flex items-center justify-center text-2xl">🥖</div>
-                                <div className="flex-1">
-                                    <h3 className="font-black text-gray-800 text-sm uppercase leading-none mb-1">{p.name}</h3>
-                                    <p className="text-orange-600 font-black text-xs">{p.price} F</p>
-                                </div>
-                                <button disabled={!store.isOpen || p.stock <= 0} onClick={() => setCart([...cart, p])} className="w-10 h-10 bg-orange-500 text-white rounded-xl flex items-center justify-center shadow-lg active:rotate-90 transition-all"><i className="fas fa-plus"></i></button>
+                        {loading ? (
+                            <div className="py-20 text-center text-gray-300 font-black uppercase text-[10px] tracking-widest animate-pulse">
+                                Chargement des produits...
                             </div>
-                        ))}
+                        ) : products.length === 0 ? (
+                            <div className="py-20 text-center text-gray-400 font-bold">
+                                Aucun produit disponible
+                            </div>
+                        ) : products.map(product => {
+                            const cartQuantity = cart[product.id] || 0;
+                            const isDisabled = !store.isOpen || product.stock <= 0;
+                            
+                            return (
+                                <div key={product.id} 
+                                     className={`bg-white p-4 rounded-[2rem] shadow-xl flex items-center gap-4 border transition-all ${isDisabled ? 'opacity-50 grayscale' : 'hover:shadow-lg'}`}>
+                                    <div className="w-14 h-14 bg-orange-50 rounded-2xl flex items-center justify-center text-2xl">
+                                        {product.emoji || '🥖'}
+                                    </div>
+                                    <div className="flex-1">
+                                        <h3 className="font-black text-gray-800 text-sm uppercase leading-none mb-1">
+                                            {product.name}
+                                        </h3>
+                                        <p className="text-orange-600 font-black text-xs">{product.price} F</p>
+                                        <p className="text-gray-400 text-[9px] font-bold mt-1">
+                                            Stock: {product.stock}
+                                            {cartQuantity > 0 && ` • Panier: ${cartQuantity}`}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        {cartQuantity > 0 && (
+                                            <button onClick={() => removeFromCart(product.id)}
+                                                    className="w-8 h-8 bg-gray-100 text-gray-700 rounded-lg flex items-center justify-center font-bold">
+                                                <i className="fas fa-minus text-[10px]"></i>
+                                            </button>
+                                        )}
+                                        <button disabled={isDisabled}
+                                                onClick={() => addToCart(product)}
+                                                className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-lg transition-all ${isDisabled ? 'bg-gray-200 text-gray-400' : 'bg-orange-500 text-white hover:bg-orange-600 active:scale-95'}`}>
+                                            <i className="fas fa-plus"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </main>
 
-                    {cart.length > 0 && (
+                    {cartArray.length > 0 && (
                         <div className="fixed bottom-6 left-6 right-6 z-50 max-w-md mx-auto">
-                            <button onClick={handleOrder} className="w-full bg-gray-900 text-white p-5 rounded-[2rem] flex justify-between items-center shadow-2xl border-2 border-white font-black uppercase italic text-xs tracking-widest">
-                                <span>Commander ({cart.length})</span>
+                            <div className="bg-white rounded-[2rem] shadow-2xl border-2 border-white mb-3 p-4">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="font-black text-xs text-gray-700">Total articles:</span>
+                                    <span className="font-black text-xs">{cartArray.reduce((acc, item) => acc + item.quantity, 0)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="font-black text-xs text-gray-700">Montant total:</span>
+                                    <span className="font-black text-lg">{total} F</span>
+                                </div>
+                            </div>
+                            <button onClick={handleOrder}
+                                    disabled={!store.isOpen}
+                                    className={`w-full p-5 rounded-[2rem] flex justify-between items-center font-black uppercase italic text-xs tracking-widest transition-all ${!store.isOpen ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 text-white hover:bg-black'}`}>
+                                <span>Commander ({cartArray.length})</span>
                                 <span>{total} F</span>
                             </button>
                         </div>
@@ -168,85 +384,8 @@
 
         const OrderTracker = ({fb, orderId}) => {
             const [order, setOrder] = React.useState(null);
+            const [loading, setLoading] = React.useState(true);
+
             React.useEffect(() => {
-                return fb.onSnapshot(fb.doc(fb.db, "orders", orderId), d => setOrder(d.data()));
-            }, [orderId]);
-            if(!order || order.status === "Livrée") return null;
-            return (
-                <div className="mx-6 mt-4 p-5 bg-white rounded-[2rem] shadow-2xl border-2 border-orange-500/20">
-                    <div className="flex justify-between items-center px-4">
-                        {[{id:"Reçue", i:"📩"}, {id:"Cuisine", i:"🍳"}, {id:"Prêt", i:"🥖"}].map(s => (
-                            <div key={s.id} className={`flex flex-col items-center gap-1 transition-all ${order.status === s.id ? 'opacity-100 scale-125' : 'opacity-10'}`}>
-                                <span className="text-xl">{s.i}</span><span className="text-[7px] font-black uppercase">{s.id}</span>
-                            </div>
-                        ))}
-                    </div>
-                    {order.status === "Prêt" && <a href={SHOP_MAPS} target="_blank" className="block mt-4 bg-blue-600 text-white text-center py-3 rounded-2xl font-black text-[9px] uppercase shadow-lg animate-pulse">Lancer Yango vers boutique</a>}
-                </div>
-            );
-        };
-
-        const AdminUI = ({fb, store, signout}) => {
-            const [ords, setOrds] = React.useState([]);
-            const [prods, setProds] = React.useState([]);
-            React.useEffect(() => {
-                fb.onSnapshot(fb.productsCol, s => setProds(s.docs.map(d => ({id: d.id, ...d.data()}))));
-                return fb.onSnapshot(fb.query(fb.ordersCol, fb.orderBy("createdAt", "desc")), s => setOrds(s.docs.map(d => ({id: d.id, ...d.data()}))));
-            }, []);
-            return (
-                <div className="min-h-screen bg-gray-100 p-6 space-y-6">
-                    <header className="flex justify-between items-center bg-gray-900 p-4 rounded-2xl text-white">
-                        <h1 className="font-black italic text-xs uppercase tracking-widest">Admin</h1>
-                        <button onClick={signout} className="bg-red-600 px-4 py-1 rounded-xl text-[8px] font-black">Sortir</button>
-                    </header>
-                    <button onClick={() => fb.updateDoc(fb.settingsDoc, {isOpen: !store.isOpen})} className={`w-full p-4 rounded-2xl font-black text-xs uppercase shadow-xl ${store.isOpen ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{store.isOpen ? "🟢 Boutique Ouverte" : "🔴 Boutique Fermée"}</button>
-                    <div className="space-y-4">
-                        <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-widest border-b pb-1">Stocks</h2>
-                        {prods.map(p => (
-                            <div key={p.id} className="bg-white p-4 rounded-2xl flex justify-between items-center shadow-sm">
-                                <span className="font-bold text-xs">{p.name}</span>
-                                <div className="flex items-center gap-4">
-                                    <button onClick={() => fb.updateDoc(fb.doc(fb.db, "products", p.id), {stock: fb.increment(-1)})} className="w-8 h-8 bg-gray-100 rounded-lg font-black">-</button>
-                                    <span className="font-black text-sm">{p.stock}</span>
-                                    <button onClick={() => fb.updateDoc(fb.doc(fb.db, "products", p.id), {stock: fb.increment(1)})} className="w-8 h-8 bg-gray-100 rounded-lg font-black">+</button>
-                                </div>
-                            </div>
-                        ))}
-                        <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-widest border-b pb-1 mt-8">Commandes</h2>
-                        {ords.filter(o => o.status !== "Livrée").map(o => (
-                            <div key={o.id} className="bg-white p-5 rounded-[2rem] shadow-sm border-l-8 border-orange-500">
-                                <p className="font-black text-gray-800 uppercase text-xs mb-2">{o.customer?.name} ({o.total} F)</p>
-                                <div className="grid grid-cols-3 gap-2">
-                                    <button onClick={() => fb.updateDoc(fb.doc(fb.db, "orders", o.id), {status: "Cuisine"})} className="bg-orange-500 text-white p-2 rounded-xl text-[7px] font-black uppercase">Cuisine</button>
-                                    <button onClick={() => fb.updateDoc(fb.doc(fb.db, "orders", o.id), {status: "Prêt"})} className="bg-green-600 text-white p-2 rounded-xl text-[7px] font-black uppercase">Prêt</button>
-                                    <button onClick={() => fb.updateDoc(fb.doc(fb.db, "orders", o.id), {status: "Livrée"})} className="bg-gray-900 text-white p-2 rounded-xl text-[7px] font-black uppercase">Fini</button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            );
-        };
-
-        const LoginUI = ({signin, auth}) => (
-            <div className="h-screen flex items-center justify-center p-6 bg-gray-50">
-                <div className="bg-white p-10 rounded-[3rem] shadow-2xl w-full max-w-sm text-center">
-                    <h2 className="text-2xl font-black mb-8 uppercase italic tracking-tighter text-gray-900">Admin Login</h2>
-                    <input id="e" type="email" placeholder="Email" className="w-full p-4 bg-gray-50 rounded-2xl mb-4 font-bold outline-none text-sm"/>
-                    <input id="p" type="password" placeholder="Pass" className="w-full p-4 bg-gray-50 rounded-2xl mb-8 font-bold outline-none text-sm"/>
-                    <button onClick={() => signin(auth, document.getElementById('e').value, document.getElementById('p').value)} className="w-full bg-gray-900 text-white p-5 rounded-[2rem] font-black uppercase text-[10px] shadow-xl italic tracking-widest">Entrer</button>
-                </div>
-            </div>
-        );
-
-        const startApp = () => {
-            const root = ReactDOM.createRoot(document.getElementById('root'));
-            root.render(<MainApp />);
-        };
-
-        if (window.fb) startApp();
-        else window.addEventListener('fb-ready', startApp);
-        window.addEventListener('hashchange', () => window.location.reload());
-    </script>
-</body>
-</html>
+                if (!orderId || !fb) return;
+             

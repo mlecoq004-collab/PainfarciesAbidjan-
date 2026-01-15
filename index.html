@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <title>Déclice – L'Excellence du Pain Farci</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0"/>
+    <meta name="theme-color" content="#121212">
     
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Playfair+Display:ital,wght@0,700;0,900;1,700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
@@ -14,7 +15,10 @@
         tailwind.config = {
             theme: { 
                 extend: { 
-                    colors: { gold: { 500: '#C5A059', 600: '#A68342' }, luxury: { 900: '#121212', 50: '#FDFCFB' } }, 
+                    colors: { 
+                        gold: { 500: '#C5A059', 600: '#A68342' },
+                        luxury: { 900: '#121212', 50: '#FDFCFB' }
+                    }, 
                     fontFamily: { 'sans': ['Inter', 'sans-serif'], 'serif': ['Playfair Display', 'serif'] } 
                 } 
             }
@@ -47,12 +51,8 @@
                 settingsDoc: doc(db, "settings", "store"), onSnapshot, doc, updateDoc, increment, setDoc, 
                 serverTimestamp, runTransaction, signOut, signInWithEmailAndPassword, onAuthStateChanged, query, orderBy, collection, where 
             };
-            // Signale à React que Firebase est prêt
             window.dispatchEvent(new Event('firebase-ready'));
-            console.log("Firebase Ready");
-        } catch (err) {
-            console.error("Firebase Init Error:", err);
-        }
+        } catch (err) { console.error("Firebase Error:", err); }
     </script>
 
     <style>
@@ -63,12 +63,7 @@
     </style>
 </head>
 <body class="h-full bg-luxury-50 text-luxury-900">
-    <div id="root" class="h-full flex items-center justify-center">
-        <div class="text-center animate-pulse">
-            <p class="font-serif italic text-2xl">Déclice</p>
-            <p class="text-[10px] uppercase tracking-widest opacity-40 mt-2">Chargement de la Maison...</p>
-        </div>
-    </div>
+    <div id="root" class="h-full"></div>
 
     <script type="text/babel">
         const SELLER_PHONE = "2250757618108";
@@ -83,8 +78,8 @@
             const [cart, setCart] = React.useState([]);
             const [cartOpen, setCartOpen] = React.useState(false);
             const [lastOrder, setLastOrder] = React.useState(null);
+            const [loading, setLoading] = React.useState(false);
 
-            // On attend le signal de Firebase
             React.useEffect(() => {
                 const handleReady = () => setFbReady(true);
                 window.addEventListener('firebase-ready', handleReady);
@@ -97,27 +92,43 @@
                 return () => window.removeEventListener('firebase-ready', handleReady);
             }, [fbReady]);
 
-            if (!fbReady) return null;
+            if (!fbReady) return <div className="h-full flex items-center justify-center font-serif italic animate-pulse text-2xl">Déclice...</div>;
 
             const total = cart.reduce((s,i)=>s+(i.price*i.qty),0);
 
+            // CORRECTIF TRANSACTION : Reads before Writes
             const handleOrder = async (form) => {
+                setLoading(true);
                 const orderId = "DCL-" + Math.floor(1000 + Math.random() * 9000);
                 const todayStr = new Date().toISOString().split('T')[0];
+                
                 try {
                     await window.fb.runTransaction(window.fb.db, async (t) => {
+                        const productRefs = [];
+                        // 1. TOUTES LES LECTURES D'ABORD
                         for (const item of cart) {
                             const pRef = window.fb.doc(window.fb.db, "products", item.id);
                             const pSnap = await t.get(pRef);
-                            if (pSnap.data().stock < 1) throw `${item.name} épuisé !`;
+                            if (!pSnap.exists()) throw `Le produit ${item.name} n'existe plus.`;
+                            if (pSnap.data().stock < 1) throw `Désolé, ${item.name} est épuisé !`;
+                            productRefs.push(pRef);
+                        }
+
+                        // 2. TOUTES LES ÉCRITURES ENSUITE
+                        for (const pRef of productRefs) {
                             t.update(pRef, { stock: window.fb.increment(-1) });
                         }
-                        const newOrder = { id: orderId, customer: form, items: cart, total, status: "Reçue", createdAt: window.fb.serverTimestamp(), dateStr: todayStr };
+
+                        const newOrder = { 
+                            id: orderId, customer: form, items: cart, total, status: "Reçue", 
+                            createdAt: window.fb.serverTimestamp(), dateStr: todayStr 
+                        };
                         t.set(window.fb.doc(window.fb.db, "orders", orderId), newOrder);
                         setLastOrder(newOrder);
                     });
                     setView('success'); setCart([]); setCartOpen(false);
-                } catch(e) { alert(e); }
+                } catch(e) { alert(e.message || e); }
+                setLoading(false);
             };
 
             if (window.location.hash === "#admin") return user ? <AdminView fb={window.fb} products={products} storeStatus={storeStatus} /> : <LoginView fb={window.fb} />;
@@ -129,30 +140,28 @@
                         <div className="flex justify-between items-end max-w-4xl mx-auto w-full">
                             <div>
                                 <h1 className="font-serif italic text-4xl font-black tracking-tighter">Déclice</h1>
-                                <p className="text-[9px] uppercase tracking-[0.4em] font-bold text-gold-600 mt-2">Maison de Qualité</p>
+                                <p className="text-[9px] uppercase tracking-[0.4em] font-bold text-gold-600 mt-2 tracking-widest">Maison de Qualité</p>
                             </div>
                             <button onClick={() => setCartOpen(true)} className="relative p-2">
                                 <i className="fas fa-shopping-bag text-2xl"></i>
-                                {cart.length > 0 && <span className="absolute -top-1 -right-1 bg-luxury-900 text-white w-4 h-4 rounded-full text-[8px] flex items-center justify-center">{cart.length}</span>}
+                                {cart.length > 0 && <span className="absolute -top-1 -right-1 bg-luxury-900 text-white w-4 h-4 rounded-full text-[8px] flex items-center justify-center animate-bounce">{cart.length}</span>}
                             </button>
                         </div>
                     </header>
 
                     <main className="px-8 py-12 flex-1 max-w-4xl mx-auto w-full">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                            {products.length === 0 ? (
-                                <p className="text-center col-span-2 opacity-20 italic">Le menu se prépare...</p>
-                            ) : products.map(p => (
-                                <div key={p.id} className={`border-b border-luxury-900/5 pb-10 ${p.stock <= 0 ? 'opacity-30' : ''}`}>
+                            {products.map(p => (
+                                <div key={p.id} className={`group border-b border-luxury-900/5 pb-10 ${p.stock <= 0 ? 'opacity-30' : ''}`}>
                                     <div className="flex justify-between items-start mb-6">
                                         <div>
-                                            <h3 className="font-serif text-2xl font-bold uppercase">{p.name}</h3>
-                                            <p className="text-[9px] font-bold text-gold-600 tracking-widest mt-1">{p.stock > 0 ? `Stock: ${p.stock}` : "Épuisé"}</p>
+                                            <h3 className="font-serif text-2xl font-bold uppercase tracking-tight">{p.name}</h3>
+                                            <p className="text-[10px] font-bold text-gold-600 mt-1 uppercase tracking-widest">{p.stock > 0 ? `Stock: ${p.stock}` : "Épuisé"}</p>
                                         </div>
                                         <span className="font-serif text-xl italic">{p.price.toLocaleString()} F</span>
                                     </div>
-                                    <button disabled={p.stock <= 0} onClick={() => setCart([...cart, {...p, qty: 1}])} className="w-full border border-luxury-900 py-4 text-[10px] font-bold uppercase tracking-[0.3em] hover:bg-luxury-900 hover:text-white transition-all">
-                                        Ajouter
+                                    <button disabled={p.stock <= 0 || !storeStatus.isOpen} onClick={() => setCart([...cart, {...p, qty: 1}])} className="w-full border border-luxury-900 py-4 text-[10px] font-bold uppercase tracking-[0.3em] hover:bg-luxury-900 hover:text-white transition-all duration-500">
+                                        Ajouter à ma sélection
                                     </button>
                                 </div>
                             ))}
@@ -164,16 +173,23 @@
                             <div className="absolute inset-0 bg-luxury-900/60 backdrop-blur-md" onClick={() => setCartOpen(false)}></div>
                             <div className="relative bg-white w-full max-w-md h-full p-12 flex flex-col animate-premium">
                                 <h2 className="font-serif text-3xl font-bold italic mb-12">Panier</h2>
-                                <div className="flex-1 space-y-4 overflow-y-auto">
+                                <div className="flex-1 overflow-y-auto space-y-6">
                                     {cart.map((i, idx) => (
                                         <div key={idx} className="flex justify-between font-serif text-lg border-b pb-2"><span>{i.name}</span><span>{i.price} F</span></div>
                                     ))}
                                 </div>
                                 <div className="mt-8 pt-8 space-y-4 border-t">
-                                    <div className="flex justify-between font-serif text-2xl font-black mb-6"><span>Total</span><span>{total} F</span></div>
-                                    <input id="cn" placeholder="Nom" className="w-full border-b py-4 outline-none text-sm" />
-                                    <input id="ca" placeholder="Quartier" className="w-full border-b py-4 outline-none text-sm" />
-                                    <button onClick={() => handleOrder({name: document.getElementById('cn').value, addr: document.getElementById('ca').value})} className="w-full gold-gradient text-white py-6 font-bold uppercase text-[10px] tracking-[0.4em]">Valider la Commande</button>
+                                    <div className="flex justify-between font-serif text-2xl font-black mb-6 italic"><span>Total</span><span>{total} F</span></div>
+                                    <input id="cn" placeholder="Nom Complet" className="w-full border-b py-4 outline-none text-sm font-semibold" />
+                                    <input id="ca" placeholder="Quartier" className="w-full border-b py-4 outline-none text-sm font-semibold" />
+                                    <button onClick={() => {
+                                        const name = document.getElementById('cn').value;
+                                        const addr = document.getElementById('ca').value;
+                                        if(name && addr) handleOrder({name, addr});
+                                        else alert("Infos manquantes");
+                                    }} disabled={loading} className="w-full gold-gradient text-white py-6 font-bold uppercase text-[10px] tracking-[0.4em] shadow-2xl">
+                                        {loading ? "Traitement..." : "Finaliser"}
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -182,15 +198,33 @@
             );
         }
 
-        const SuccessView = ({order, onBack}) => (
-            <div className="h-screen flex flex-col items-center justify-center p-12 text-center bg-white">
-                <i className="fas fa-check-circle text-5xl text-gold-500 mb-8"></i>
-                <h2 className="font-serif text-4xl font-bold italic mb-4">Confirmé</h2>
-                <p className="text-[10px] uppercase tracking-widest opacity-40 mb-12 italic">Commande #{order?.id}</p>
-                <a href={WAVE_LINK} target="_blank" className="w-full max-w-xs gold-gradient text-white py-5 font-bold uppercase text-[10px] tracking-[0.4em] shadow-xl mb-4 text-center">Régler via Wave</a>
-                <button onClick={onBack} className="text-[10px] font-bold opacity-30 underline">Retour au menu</button>
-            </div>
-        );
+        const SuccessView = ({order, onBack}) => {
+            const downloadPDF = () => {
+                const element = document.getElementById('receipt-box');
+                html2pdf().from(element).set({ margin: 1, filename: `Recu_${order.id}.pdf`, jsPDF: { unit: 'in', format: 'letter' } }).save();
+            };
+            return (
+                <div className="min-h-screen bg-luxury-50 flex flex-col items-center py-20 px-8 animate-premium">
+                    <div id="receipt-box" className="bg-white p-12 shadow-2xl w-full max-w-sm text-center mb-10 border border-luxury-900/5">
+                        <h2 className="font-serif text-3xl font-black italic mb-2 tracking-tighter">Déclice</h2>
+                        <p className="text-[8px] uppercase tracking-[0.5em] text-gold-600 mb-10 border-b pb-4 font-bold">Abidjan - Maison de Qualité</p>
+                        <div className="text-left space-y-4 mb-10 text-[10px] font-bold uppercase tracking-widest opacity-60">
+                            <p>Commande: #{order?.id}</p>
+                            <p>Client: {order?.customer?.name}</p>
+                            <div className="h-px bg-luxury-900/5 my-4"></div>
+                            {order?.items.map((i,idx)=><div key={idx} className="flex justify-between italic"><span>{i.name}</span><span>{i.price} F</span></div>)}
+                            <div className="h-px bg-luxury-900/5 my-4"></div>
+                            <div className="flex justify-between text-lg text-luxury-900 opacity-100 italic"><span>Total Payé</span><span>{order?.total} F</span></div>
+                        </div>
+                    </div>
+                    <div className="flex flex-col gap-4 w-full max-w-sm">
+                        <button onClick={downloadPDF} className="w-full bg-luxury-900 text-white py-5 text-[10px] font-bold uppercase tracking-widest">Télécharger le reçu</button>
+                        <a href={WAVE_LINK} target="_blank" className="w-full gold-gradient text-white py-5 text-center text-[10px] font-bold uppercase tracking-widest shadow-xl">Payer via Wave</a>
+                        <button onClick={onBack} className="text-[10px] font-bold opacity-30 mt-4 underline uppercase">Retour au menu</button>
+                    </div>
+                </div>
+            );
+        };
 
         const AdminView = ({fb, products, storeStatus}) => {
             const [orders, setOrders] = React.useState([]);
@@ -202,56 +236,57 @@
 
             const ordersToday = orders.filter(o => o.dateStr === todayStr);
             const revenueToday = ordersToday.reduce((s,o) => s + o.total, 0);
+            const soldCount = {};
+            ordersToday.forEach(o => o.items.forEach(i => soldCount[i.name] = (soldCount[i.name] || 0) + 1));
+
+            const shareReport = () => {
+                let msg = `📝 *BILAN DÉCLICE - ${new Date().toLocaleDateString()}*\n\n`;
+                msg += `💰 CA: *${revenueToday.toLocaleString()} F*\n`;
+                msg += `📦 Commandes: *${ordersToday.length}*\n\n`;
+                products.forEach(p => msg += `• ${p.name}: ${soldCount[p.name] || 0} vendus\n`);
+                window.open(`https://wa.me/${SELLER_PHONE}?text=${encodeURIComponent(msg)}`);
+            };
 
             return (
-                <div className="min-h-screen bg-slate-50 flex flex-col">
-                    <header className="bg-luxury-900 text-white p-6 flex justify-between items-center shadow-xl">
-                        <h1 className="font-serif italic text-xl">Admin Déclice</h1>
-                        <button onClick={()=>fb.signOut(fb.auth)} className="text-[10px] opacity-50 uppercase font-bold tracking-widest">Sortir</button>
+                <div className="min-h-screen bg-slate-50 flex flex-col font-sans animate-premium">
+                    <header className="bg-luxury-900 text-white p-6 flex justify-between items-center shadow-2xl">
+                        <h1 className="font-serif italic text-xl">Admin Dashboard</h1>
+                        <button onClick={shareReport} className="bg-gold-500 text-white px-5 py-2 rounded-full text-[9px] font-black uppercase tracking-widest">Fin de Journée</button>
                     </header>
-                    <main className="p-8 max-w-5xl mx-auto w-full space-y-12">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                            <div className="bg-white p-8 shadow-sm border-t-4 border-gold-500">
-                                <p className="text-[10px] uppercase font-black opacity-30">Revenu du Jour</p>
+                    <main className="p-8 max-w-6xl mx-auto w-full space-y-12">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-center">
+                            <div className="bg-white p-8 border-t-4 border-gold-500 shadow-sm">
+                                <p className="text-[10px] font-black opacity-30 uppercase tracking-widest mb-2">Chiffre d'Affaires</p>
                                 <p className="font-serif text-3xl font-black">{revenueToday.toLocaleString()} F</p>
                             </div>
-                            <div className="bg-white p-8 shadow-sm border-t-4 border-luxury-900 text-center">
-                                <button onClick={()=>fb.updateDoc(fb.settingsDoc, {isOpen: !storeStatus.isOpen})} className="font-bold uppercase text-xs">{storeStatus.isOpen ? "🟢 Maison Ouverte" : "🔴 Maison Fermée"}</button>
+                            <div className="bg-white p-8 border-t-4 border-luxury-900 shadow-sm">
+                                <p className="text-[10px] font-black opacity-30 uppercase tracking-widest mb-2">Commandes</p>
+                                <p className="font-serif text-3xl font-black">{ordersToday.length}</p>
+                            </div>
+                            <div className="bg-white p-8 border-t-4 border-slate-200 shadow-sm">
+                                <p className="text-[10px] font-black opacity-30 uppercase tracking-widest mb-2">Boutique</p>
+                                <button onClick={()=>fb.updateDoc(fb.settingsDoc, {isOpen: !storeStatus.isOpen})} className="font-bold underline text-xs uppercase">{storeStatus.isOpen ? "🟢 Ouvert" : "🔴 Fermé"}</button>
                             </div>
                         </div>
-                        <div className="space-y-6">
-                            <h3 className="text-[10px] uppercase font-black tracking-widest opacity-40 italic">Stocks en Direct</h3>
-                            <div className="bg-white p-8 shadow-sm space-y-6">
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                            <div className="bg-white p-8 shadow-sm space-y-8">
+                                <h3 className="text-[10px] uppercase font-black tracking-widest opacity-40 italic">Gestion des Stocks</h3>
                                 {products.map(p => (
-                                    <div key={p.id} className="flex items-center justify-between border-b pb-4 last:border-0">
-                                        <span className="font-bold text-sm uppercase">{p.name}</span>
-                                        <div className="flex items-center gap-4">
-                                            <button onClick={()=>fb.updateDoc(fb.doc(fb.db, "products", p.id), {stock: fb.increment(-1)})} className="w-8 h-8 border rounded-full">-</button>
-                                            <span className="font-serif font-black">{p.stock}</span>
-                                            <button onClick={()=>fb.updateDoc(fb.doc(fb.db, "products", p.id), {stock: fb.increment(1)})} className="w-8 h-8 border rounded-full">+</button>
+                                    <div key={p.id} className="flex items-center justify-between border-b pb-6 last:border-0">
+                                        <div><p className="font-bold text-sm uppercase">{p.name}</p><p className="text-[10px] font-bold text-gold-600 mt-1 uppercase">Vendus: {soldCount[p.name] || 0}</p></div>
+                                        <div className="flex items-center gap-4 bg-slate-100 p-2 rounded-xl">
+                                            <button onClick={()=>fb.updateDoc(fb.doc(fb.db, "products", p.id), {stock: fb.increment(-1)})} className="w-8 h-8 rounded-full border border-black/10 font-bold hover:bg-black hover:text-white transition-all">-</button>
+                                            <span className="font-serif font-black text-xl w-6 text-center">{p.stock}</span>
+                                            <button onClick={()=>fb.updateDoc(fb.doc(fb.db, "products", p.id), {stock: fb.increment(1)})} className="w-8 h-8 rounded-full border border-black/10 font-bold hover:bg-black hover:text-white transition-all">+</button>
                                         </div>
                                     </div>
                                 ))}
                             </div>
-                        </div>
-                    </main>
-                </div>
-            );
-        };
-
-        const LoginView = ({fb}) => (
-            <div className="h-screen flex items-center justify-center p-8 bg-luxury-900 text-white">
-                <div className="w-full max-w-sm text-center">
-                    <h2 className="font-serif text-3xl italic mb-12">Administration</h2>
-                    <input id="e" placeholder="Email" className="w-full bg-white/5 border border-white/10 p-5 mb-4 outline-none text-sm" />
-                    <input id="p" type="password" placeholder="Pass" className="w-full bg-white/5 border border-white/10 p-5 mb-10 outline-none text-sm" />
-                    <button onClick={()=>fb.signInWithEmailAndPassword(fb.auth, document.getElementById('e').value, document.getElementById('p').value)} className="w-full gold-gradient py-6 font-bold uppercase text-[10px] tracking-[0.4em]">Entrer</button>
-                </div>
-            </div>
-        );
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+                            <div className="space-y-4">
+                                <h3 className="text-[10px] uppercase font-black tracking-widest opacity-40 italic">Commandes en attente</h3>
+                                {orders.filter(o => o.status !== "Livrée").map(o => (
+                                    <div key={o.id} className="bg-white p-6 shadow-sm border-l-4 border-gold-500 flex justify-between items-center">
+                                        <div>
+                                            <p className="font-black text-xs uppercase mb-1">{o.customer?.name}</p>
+                                            <p className="text-[9px] opacity-40 uppercase mb-

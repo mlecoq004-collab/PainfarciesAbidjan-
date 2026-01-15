@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0"/>
     <meta name="theme-color" content="#f59e0b">
     <link rel="manifest" href="manifest.json">
+    
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800;900&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -13,10 +14,11 @@
             theme: { extend: { colors: { brand: { 50: '#fffbeb', 100: '#fef3c7', 500: '#f59e0b', 600: '#d97706', 700: '#b45309' } }, fontFamily: { 'sans': ['Poppins', 'sans-serif'] } } }
         };
     </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -35,81 +37,146 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-        window.fb = { db, auth: getAuth(app), productsCol: collection(db, "products"), ordersCol: collection(db, "orders"), onSnapshot, doc, updateDoc, increment, setDoc, serverTimestamp, runTransaction, signOut, signInWithEmailAndPassword, onAuthStateChanged, query, orderBy };
+        
+        // On attache tout à window pour que Babel puisse y accéder
+        window.fb = { 
+            db, auth: getAuth(app), productsCol: collection(db, "products"), ordersCol: collection(db, "orders"), 
+            onSnapshot, doc, updateDoc, increment, setDoc, serverTimestamp, runTransaction, 
+            signOut, signInWithEmailAndPassword, onAuthStateChanged, query, orderBy, collection
+        };
+        
+        // Signal que Firebase est prêt
+        window.dispatchEvent(new Event('firebase-ready'));
     </script>
 
     <style>
         .glass { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(12px); }
-        .product-card:active { transform: scale(0.96); }
         .gradient-text { background: linear-gradient(to right, #f59e0b, #ea580c); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
         .animate-slide-in { animation: slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
     </style>
 </head>
 <body class="h-full bg-slate-50 font-sans">
-    <div id="root" class="h-full"></div>
+    <div id="root" class="h-full flex items-center justify-center">
+        <div class="text-center">
+            <i class="fas fa-bread-slice fa-spin text-4xl text-brand-500 mb-4"></i>
+            <p class="text-slate-400 font-bold animate-pulse uppercase tracking-widest text-xs">Chargement Déclice...</p>
+        </div>
+    </div>
 
     <script type="text/babel">
-        const { db, auth, productsCol, ordersCol, onSnapshot, doc, updateDoc, increment, setDoc, serverTimestamp, runTransaction, signOut, signInWithEmailAndPassword, onAuthStateChanged, query, orderBy } = window.fb;
-        const SELLER_PHONE = "2250757618108"; 
+        const SELLER_PHONE = "2250757618108";
 
-        const useCart = () => {
-            const [items, setItems] = React.useState([]);
-            const addItem = (p) => {
-                setItems(prev => {
+        function App() {
+            // On vérifie si Firebase est disponible
+            if (!window.fb) return null;
+            
+            const { db, auth, productsCol, ordersCol, onSnapshot, doc, updateDoc, increment, setDoc, serverTimestamp, runTransaction, signOut, signInWithEmailAndPassword, onAuthStateChanged, query, orderBy, collection } = window.fb;
+
+            const [user, setUser] = React.useState(null);
+            const [products, setProducts] = React.useState([]);
+            const [cart, setCart] = React.useState([]);
+            const [cartOpen, setCartOpen] = React.useState(false);
+            const [currentOrderId, setCurrentOrderId] = React.useState(localStorage.getItem('lastOrderId'));
+
+            React.useEffect(() => {
+                onAuthStateChanged(auth, u => setUser(u));
+                return onSnapshot(productsCol, s => setProducts(s.docs.map(d=>({id:d.id, ...d.data()}))));
+            }, []);
+
+            const total = cart.reduce((s,i) => s + (i.price * i.qty), 0);
+
+            const addToCart = (p) => {
+                setCart(prev => {
                     const exist = prev.find(i => i.id === p.id);
                     if (exist) return prev.map(i => i.id === p.id ? {...i, qty: i.qty + 1} : i);
                     return [...prev, {...p, qty: 1}];
                 });
             };
-            return { items, addItem, total: items.reduce((s,i)=>s+(i.price*i.qty),0), clear:()=>setItems([]) };
-        };
 
-        // --- COMPOSANT PRODUIT ---
-        function ProductCard({product, onAdd}) {
-            const isOut = product.stock <= 0;
+            // --- VUE ADMIN ---
+            if (window.location.hash === "#admin") {
+                if (!user) return (
+                    <div className="flex items-center justify-center h-screen bg-slate-50 p-6 w-full">
+                        <div className="bg-white p-10 rounded-[3rem] shadow-2xl w-full max-w-sm">
+                            <h2 className="text-2xl font-black mb-8 text-center gradient-text uppercase tracking-tighter">Accès Vendeuse</h2>
+                            <input id="email" type="email" placeholder="Email" className="w-full p-4 bg-slate-50 rounded-2xl mb-4 outline-none border-none"/>
+                            <input id="pass" type="password" placeholder="Mot de passe" className="w-full p-4 bg-slate-50 rounded-2xl mb-8 outline-none border-none"/>
+                            <button onClick={() => signInWithEmailAndPassword(auth, document.getElementById('email').value, document.getElementById('pass').value).catch(e=>alert("Erreur"))} className="w-full bg-slate-900 text-white p-5 rounded-[2rem] font-black">SE CONNECTER</button>
+                        </div>
+                    </div>
+                );
+
+                return <AdminView fb={window.fb} signOut={() => signOut(auth)} />;
+            }
+
+            // --- VUE CLIENT ---
             return (
-                <div className="product-card bg-white rounded-[2.5rem] p-6 shadow-xl shadow-amber-200/20 border border-white flex flex-col relative transition-all">
-                    <div className={`absolute top-4 right-4 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${isOut ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
-                        {isOut ? 'Épuisé' : `En stock: ${product.stock}`}
-                    </div>
-                    <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center text-3xl mb-4">{product.category === 'Boisson' ? '🥤' : '🥖'}</div>
-                    <h3 className="font-extrabold text-lg text-slate-800 leading-tight mb-1">{product.name}</h3>
-                    <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-4">{product.category}</p>
-                    <div className="mt-auto flex items-center justify-between">
-                        <span className="text-xl font-black text-slate-900">{product.price.toLocaleString()} <span className="text-[10px] text-brand-500 font-black">FCFA</span></span>
-                        <button disabled={isOut} onClick={() => onAdd(product)} className="bg-brand-500 text-white w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg active:scale-90 transition-all focus:outline-none">
-                            <i className={`fas ${isOut ? 'fa-hourglass-end' : 'fa-plus'}`}></i>
+                <div className="min-h-screen flex flex-col">
+                    <header className="px-6 pt-10 pb-4 flex justify-between items-center sticky top-0 z-40 glass border-b border-amber-50">
+                        <div><h1 className="text-3xl font-black gradient-text tracking-tighter uppercase leading-none italic">Déclice</h1><p className="text-[10px] font-black text-slate-400 tracking-[0.3em] uppercase">Pain Farci Abidjan</p></div>
+                        <button onClick={() => setCartOpen(true)} className="relative bg-white w-14 h-14 rounded-2xl shadow-xl flex items-center justify-center text-brand-600 border border-white">
+                            <i className="fas fa-shopping-basket text-xl"></i>
+                            {cart.length > 0 && <span className="absolute -top-2 -right-2 bg-red-500 text-white w-6 h-6 rounded-full text-[10px] font-black flex items-center justify-center border-4 border-white">{cart.length}</span>}
                         </button>
-                    </div>
+                    </header>
+
+                    {currentOrderId && <OrderTracker fb={window.fb} orderId={currentOrderId} />}
+
+                    <main className="px-6 pt-6 pb-32 grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-5xl mx-auto w-full">
+                        <div className="col-span-full bg-brand-500 rounded-[3rem] p-8 text-white shadow-xl relative overflow-hidden mb-2">
+                            <h2 className="text-2xl font-black leading-tight mb-2 italic">Le goût qui fait <br/> bouger Abidjan ! 🇨🇮</h2>
+                            <p className="text-brand-100 text-[9px] font-black uppercase tracking-[0.2em] opacity-80 underline italic">Livraison Yango à votre charge</p>
+                        </div>
+                        {products.length === 0 ? <p className="text-center col-span-full py-20 text-slate-300 font-bold">Chargement du menu...</p> : 
+                            products.map(p => (
+                                <div key={p.id} className="bg-white rounded-[2.5rem] p-6 shadow-xl shadow-amber-200/20 border border-white flex flex-col relative transition-all active:scale-95">
+                                    <div className={`absolute top-4 right-4 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${p.stock <= 0 ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
+                                        {p.stock <= 0 ? 'Épuisé' : `Stock: ${p.stock}`}
+                                    </div>
+                                    <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center text-3xl mb-4">{p.category === 'Boisson' ? '🥤' : '🥖'}</div>
+                                    <h3 className="font-extrabold text-lg text-slate-800 mb-1">{p.name}</h3>
+                                    <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-4">{p.category}</p>
+                                    <div className="mt-auto flex items-center justify-between">
+                                        <span className="text-xl font-black text-slate-900">{p.price.toLocaleString()} <span className="text-[10px] text-brand-500 font-black">FCFA</span></span>
+                                        <button disabled={p.stock <= 0} onClick={() => addToCart(p)} className="bg-brand-500 text-white w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg active:scale-90">
+                                            <i className="fas fa-plus"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            ))
+                        }
+                    </main>
+
+                    {cart.length > 0 && (
+                        <div className="fixed bottom-8 left-6 right-6 z-50 max-w-md mx-auto">
+                            <button onClick={() => setCartOpen(true)} className="w-full bg-slate-900 text-white p-6 rounded-[2.5rem] flex justify-between items-center shadow-2xl border-4 border-white active:scale-95 transition-all">
+                                <span className="font-black text-[10px] uppercase tracking-widest italic">Voir mon panier</span>
+                                <span className="text-xl font-black">{total.toLocaleString()} FCFA</span>
+                            </button>
+                        </div>
+                    )}
+
+                    <CartDrawer isOpen={cartOpen} onClose={() => setCartOpen(false)} cart={cart} total={total} onOrderSuccess={(id) => { setCurrentOrderId(id); setCart([]); }} fb={window.fb} />
                 </div>
             );
         }
 
-        // --- SUIVI DE COMMANDE (CLIENT) ---
-        function OrderTracker({orderId}) {
+        // --- COMPOSANT SUIVI ---
+        function OrderTracker({fb, orderId}) {
             const [order, setOrder] = React.useState(null);
             React.useEffect(() => {
-                if(!orderId) return;
-                return onSnapshot(doc(db, "orders", orderId), (d) => setOrder(d.data()));
+                return fb.onSnapshot(fb.doc(fb.db, "orders", orderId), (d) => setOrder(d.data()));
             }, [orderId]);
-
             if(!order || order.status === "Livrée") return null;
-
-            const steps = [
-                { id: "Reçue", icon: "📩", label: "Reçue" },
-                { id: "Cuisine", icon: "🍳", label: "En cuisine" },
-                { id: "Prêt", icon: "🥖", label: "C'est prêt !" }
-            ];
-
+            const steps = [ {id:"Reçue", i:"📩", l:"Reçue"}, {id:"Cuisine", i:"🍳", l:"Cuisine"}, {id:"Prêt", i:"🥖", l:"Prêt !"} ];
             return (
-                <div className="mx-6 mt-4 p-5 bg-slate-900 rounded-[2rem] text-white shadow-2xl animate-bounce-slow">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-brand-500 mb-3 text-center">Suivi de votre commande en direct</p>
+                <div className="mx-6 mt-4 p-5 bg-slate-900 rounded-[2rem] text-white shadow-2xl">
+                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-brand-500 mb-3 text-center">Suivi de commande</p>
                     <div className="flex justify-between items-center px-2">
-                        {steps.map((s, idx) => (
-                            <div key={s.id} className={`flex flex-col items-center gap-1 ${order.status === s.id ? 'opacity-100 scale-110' : 'opacity-30'}`}>
-                                <span className="text-2xl">{s.icon}</span>
-                                <span className="text-[9px] font-bold uppercase tracking-tighter">{s.label}</span>
+                        {steps.map(s => (
+                            <div key={s.id} className={`flex flex-col items-center gap-1 ${order.status === s.id ? 'opacity-100 scale-110' : 'opacity-20'}`}>
+                                <span className="text-xl">{s.i}</span><span className="text-[8px] font-bold uppercase">{s.l}</span>
                             </div>
                         ))}
                     </div>
@@ -117,110 +184,77 @@
             );
         }
 
-        // --- PANIER (DRAWER) ---
-        function CartDrawer({cart, isOpen, onClose, onOrderSuccess}) {
-            const [form, setForm] = React.useState({name: "", phone: "", address: "", note: "", gps: ""});
+        // --- COMPOSANT PANIER ---
+        function CartDrawer({isOpen, onClose, cart, total, onOrderSuccess, fb}) {
+            const [form, setForm] = React.useState({name: "", address: "", gps: ""});
             const [loading, setLoading] = React.useState(false);
+            if (!isOpen) return null;
 
-            const getLoc = () => {
-                navigator.geolocation.getCurrentPosition(p => {
-                    setForm({...form, gps: `https://www.google.com/maps?q=$?q=${p.coords.latitude},${p.coords.longitude}`});
-                    alert("📍 Position capturée !");
-                }, () => alert("Activez votre GPS."));
-            };
-
-            const handleSubmit = async (e) => {
+            const handleFinalize = async (e) => {
                 e.preventDefault();
                 setLoading(true);
                 try {
                     const orderId = "CMD-" + Date.now();
-                    await runTransaction(db, async (t) => {
+                    await fb.runTransaction(fb.db, async (t) => {
                         const productSnaps = [];
-                        for (const item of cart.items) {
-                            const pRef = doc(db, "products", item.id);
+                        for (const item of cart) {
+                            const pRef = fb.doc(fb.db, "products", item.id);
                             const pSnap = await t.get(pRef);
                             if (pSnap.data().stock < item.qty) throw `Stock épuisé pour ${item.name}`;
                             productSnaps.push({ ref: pRef, qty: item.qty });
                         }
-                        for (const p of productSnaps) { t.update(p.ref, { stock: increment(-p.qty) }); }
-                        const orderRef = doc(db, "orders", orderId);
-                        t.set(orderRef, { customer: form, items: cart.items, total: cart.total, status: "Reçue", createdAt: serverTimestamp() });
+                        for (const p of productSnaps) { t.update(p.ref, { stock: fb.increment(-p.qty) }); }
+                        t.set(fb.doc(fb.db, "orders", orderId), { customer: form, items: cart, total, status: "Reçue", createdAt: fb.serverTimestamp() });
                     });
-
-                    const msg = encodeURIComponent(`🥖 *DÉCLICE PAIN FARCI*\n*CLIENT:* ${form.name.toUpperCase()}\n*LIEU:* ${form.address}\n*TOTAL:* ${cart.total.toLocaleString()} FCFA\n📍 *GPS:* ${form.gps}\n\n⚠️ _Merci de ne pas appeler. Suivez l'avancement sur l'app._`);
+                    const msg = encodeURIComponent(`🥖 *NOUVELLE COMMANDE DÉCLICE*\n*CLIENT:* ${form.name.toUpperCase()}\n*LIEU:* ${form.address}\n*TOTAL:* ${total} FCFA\n📍 *GPS:* ${form.gps}\n\n⚠️ _Pas d'appel svp, suivez sur l'app._`);
                     window.open(`https://wa.me/${SELLER_PHONE}?text=${msg}`);
                     localStorage.setItem('lastOrderId', orderId);
-                    onOrderSuccess(orderId);
-                    cart.clear(); onClose();
+                    onOrderSuccess(orderId); onClose();
                 } catch (err) { alert(err); }
                 setLoading(false);
             };
 
-            if (!isOpen) return null;
             return (
                 <div className="fixed inset-0 z-[100] flex justify-end">
-                    <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose}></div>
-                    <div className="relative bg-white w-full max-w-md h-full shadow-2xl flex flex-col animate-slide-in rounded-l-[2.5rem] overflow-hidden">
-                        <div className="p-8 flex justify-between items-center border-b border-slate-50"><h2 className="font-black text-slate-800 tracking-tighter uppercase text-lg">Mon Panier</h2><button onClick={onClose} className="text-2xl text-slate-300">×</button></div>
-                        <div className="flex-1 overflow-y-auto p-8 space-y-6">
-                            {cart.items.map(i => (
-                                <div key={i.id} className="flex justify-between items-center bg-slate-50 p-4 rounded-2xl">
-                                    <div className="text-sm font-bold text-slate-700">{i.qty}x {i.name}</div>
-                                    <div className="font-black text-brand-600 text-sm">{i.price * i.qty} FCFA</div>
-                                </div>
-                            ))}
-                            {cart.items.length > 0 && (
-                                <div className="space-y-6">
-                                    <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 text-center">
-                                        <div className="flex justify-between items-center mb-1 font-black text-brand-600 italic"><span>TOTAL</span><span>{cart.total.toLocaleString()} FCFA</span></div>
-                                        <p className="text-[9px] text-amber-600 font-black uppercase tracking-widest mt-2 border-t border-amber-200 pt-2">LIVRAISON YANGO À VOTRE CHARGE</p>
-                                    </div>
-                                    <form onSubmit={handleSubmit} className="space-y-4">
-                                        <input placeholder="Nom et Prénom" required className="w-full p-4 bg-slate-100 rounded-2xl text-sm font-medium outline-none" onChange={e=>setForm({...form, name:e.target.value})}/>
-                                        <input placeholder="Quartier précis" required className="w-full p-4 bg-slate-100 rounded-2xl text-sm font-medium outline-none" onChange={e=>setForm({...form, address:e.target.value})}/>
-                                        <button type="button" onClick={getLoc} className="w-full py-4 bg-blue-50 text-blue-600 rounded-2xl font-bold text-xs"><i className="fas fa-location-arrow mr-2"></i>ACTIVER GPS</button>
-                                        <button type="submit" disabled={loading} className="w-full bg-slate-900 text-white p-5 rounded-[2rem] font-black text-lg active:scale-95 transition-all shadow-xl">VALIDER SANS APPELER</button>
-                                    </form>
-                                </div>
-                            )}
+                    <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}></div>
+                    <div className="relative bg-white w-full max-w-md h-full flex flex-col animate-slide-in rounded-l-[2.5rem] p-8 overflow-y-auto">
+                        <h2 className="text-xl font-black mb-6 uppercase italic">Mon Panier</h2>
+                        {cart.map(i => <div key={i.id} className="flex justify-between mb-2 text-sm"><span>{i.qty}x {i.name}</span><span className="font-bold">{i.price*i.qty} FCFA</span></div>)}
+                        <div className="mt-6 pt-6 border-t space-y-4">
+                            <div className="flex justify-between font-black text-brand-600"><span>TOTAL</span><span>{total} FCFA</span></div>
+                            <input placeholder="Votre Nom" required className="w-full p-4 bg-slate-100 rounded-2xl outline-none" onChange={e=>setForm({...form, name:e.target.value})}/>
+                            <input placeholder="Quartier" required className="w-full p-4 bg-slate-100 rounded-2xl outline-none" onChange={e=>setForm({...form, address:e.target.value})}/>
+                            <button type="button" onClick={() => navigator.geolocation.getCurrentPosition(p => { setForm({...form, gps: `https://www.google.com/maps?q=${p.coords.latitude},${p.coords.longitude}`}); alert("📍 Position capturée !"); })} className="w-full py-3 bg-blue-50 text-blue-600 rounded-2xl font-bold text-xs uppercase">Activer GPS</button>
+                            <button onClick={handleFinalize} disabled={loading} className="w-full bg-slate-900 text-white p-5 rounded-[2rem] font-black uppercase tracking-widest text-xs active:scale-95 transition-all">Valider la commande</button>
                         </div>
                     </div>
                 </div>
             );
         }
 
-        function Admin() {
+        // --- COMPOSANT ADMIN ---
+        function AdminView({fb, signOut}) {
             const [prods, setProds] = React.useState([]);
             const [ords, setOrds] = React.useState([]);
-            const [tab, setTab] = React.useState("orders");
             React.useEffect(() => {
-                const unsubP = onSnapshot(productsCol, s => setProds(s.docs.map(d=>({id:d.id, ...d.data()}))));
-                const unsubO = onSnapshot(query(ordersCol, orderBy("createdAt", "desc")), s => setOrds(s.docs.map(d=>({id:d.id, ...d.data()}))));
+                const unsubP = fb.onSnapshot(fb.productsCol, s => setProds(s.docs.map(d=>({id:d.id, ...d.data()}))));
+                const unsubO = fb.onSnapshot(fb.query(fb.ordersCol, fb.orderBy("createdAt", "desc")), s => setOrds(s.docs.map(d=>({id:d.id, ...d.data()}))));
                 return () => { unsubP(); unsubO(); };
             }, []);
-
-            const updateStatus = (id, s) => updateDoc(doc(db, "orders", id), { status: s });
-
             return (
-                <div className="min-h-screen bg-slate-100 flex flex-col">
-                    <header className="bg-slate-900 text-white p-6 flex justify-between items-center"><h1 className="font-black italic">ADMIN DÉCLICE</h1><button onClick={() => signOut(auth)} className="text-xs bg-red-600 px-4 py-1 rounded-full font-black">SORTIR</button></header>
-                    <div className="flex bg-white shadow-sm sticky top-0 z-10"><button onClick={()=>setTab("orders")} className={`flex-1 p-4 font-bold text-xs uppercase ${tab==='orders'?'border-b-4 border-brand-500 text-brand-600':'text-slate-400'}`}>Commandes ({ords.length})</button><button onClick={()=>setTab("stocks")} className={`flex-1 p-4 font-bold text-xs uppercase ${tab==='stocks'?'border-b-4 border-brand-500 text-brand-600':'text-slate-400'}`}>Stocks</button></div>
-                    <main className="p-4 space-y-4 max-w-2xl mx-auto w-full">
-                        {tab === 'stocks' ? prods.map(p => (
-                            <div key={p.id} className="bg-white p-5 rounded-3xl flex justify-between items-center shadow-sm border border-white"><div><p className="font-black text-slate-800 uppercase">{p.name}</p><p className="text-[10px] font-bold text-slate-400">Restants: {p.stock}</p></div><div className="flex items-center gap-3"><button onClick={()=>updateDoc(doc(db,"products",p.id),{stock:increment(-1)})} className="w-10 h-10 bg-slate-100 rounded-xl font-black">-</button><span className="font-black text-lg">{p.stock}</span><button onClick={()=>updateDoc(doc(db,"products",p.id),{stock:increment(1)})} className="w-10 h-10 bg-slate-100 rounded-xl font-black">+</button></div></div>
-                        )) : ords.filter(o => o.status !== "Livrée").map(o => (
-                            <div key={o.id} className="bg-white p-6 rounded-[2rem] shadow-sm border-l-8 border-brand-500 text-sm mb-4">
-                                <div className="flex justify-between items-start mb-4">
-                                    <div><p className="font-black text-slate-800 text-base">{o.customer?.name}</p><p className="text-blue-600 font-bold">{o.customer?.address}</p></div>
-                                    <span className="bg-amber-100 text-amber-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">{o.status}</span>
+                <div className="min-h-screen bg-slate-100 w-full">
+                    <header className="bg-slate-900 text-white p-6 flex justify-between items-center"><h1 className="font-black italic">ADMIN DÉCLICE</h1><button onClick={signOut} className="text-[10px] bg-red-600 px-4 py-1 rounded-full font-black">SORTIR</button></header>
+                    <main className="p-6 space-y-4 max-w-2xl mx-auto">
+                        <h2 className="font-black text-xs uppercase tracking-widest text-slate-400">Commandes En Cours</h2>
+                        {ords.filter(o => o.status !== "Livrée").map(o => (
+                            <div key={o.id} className="bg-white p-6 rounded-[2rem] shadow-sm border-l-8 border-brand-500">
+                                <div className="flex justify-between mb-4"><div><p className="font-black text-slate-800">{o.customer?.name}</p><p className="text-blue-600 text-[10px] font-bold uppercase">{o.customer?.address}</p></div><span className="text-[9px] bg-amber-100 px-2 py-1 rounded-full font-black uppercase">{o.status}</span></div>
+                                <div className="text-[11px] font-bold text-slate-500 mb-4 bg-slate-50 p-3 rounded-xl">{o.items?.map(i=>`${i.qty}x ${i.name}`).join(", ")}</div>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <button onClick={()=>fb.updateDoc(fb.doc(fb.db,"orders",o.id), {status:"Cuisine"})} className="bg-amber-500 text-white p-2 rounded-xl text-[8px] font-black uppercase">Cuisine</button>
+                                    <button onClick={()=>fb.updateDoc(fb.doc(fb.db,"orders",o.id), {status:"Prêt"})} className="bg-green-600 text-white p-2 rounded-xl text-[8px] font-black uppercase">Prêt</button>
+                                    <button onClick={()=>fb.updateDoc(fb.doc(fb.db,"orders",o.id), {status:"Livrée"})} className="bg-slate-900 text-white p-2 rounded-xl text-[8px] font-black uppercase">Fini</button>
                                 </div>
-                                <div className="bg-slate-50 p-4 rounded-xl text-xs font-bold text-slate-600 mb-6 italic leading-relaxed">{o.items?.map(i=>`${i.qty}x ${i.name}`).join(", ")}</div>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button onClick={()=>updateStatus(o.id, "Cuisine")} className="bg-amber-500 text-white p-3 rounded-xl text-[10px] font-black uppercase tracking-widest">En Cuisine 🍳</button>
-                                    <button onClick={()=>updateStatus(o.id, "Prêt")} className="bg-green-600 text-white p-3 rounded-xl text-[10px] font-black uppercase tracking-widest">C'est Prêt 🥖</button>
-                                    <button onClick={()=>updateStatus(o.id, "Livrée")} className="col-span-2 bg-slate-900 text-white p-3 rounded-xl text-[10px] font-black uppercase tracking-widest">Départ Livreur ✅</button>
-                                </div>
-                                <a href={o.customer?.gps} target="_blank" className="block mt-3 text-center text-blue-500 font-black text-[10px] uppercase tracking-widest underline italic">Ouvrir position Yango 🗺️</a>
                             </div>
                         ))}
                     </main>
@@ -228,37 +262,16 @@
             );
         }
 
-        function App() {
-            const [user, setUser] = React.useState(null);
-            const [products, setProducts] = React.useState([]);
-            const [cartOpen, setCartOpen] = React.useState(false);
-            const [currentOrderId, setCurrentOrderId] = React.useState(localStorage.getItem('lastOrderId'));
-            const cart = useCart();
+        // --- DÉMARRAGE ---
+        const startApp = () => {
+            const root = ReactDOM.createRoot(document.getElementById('root'));
+            root.render(<App />);
+        };
 
-            React.useEffect(() => { 
-                onAuthStateChanged(auth, u => setUser(u)); 
-                return onSnapshot(productsCol, s => setProducts(s.docs.map(d=>({id:d.id, ...d.data()})))); 
-            }, []);
-
-            if (window.location.hash === "#admin") {
-                if (!user) return (
-                    <div className="flex items-center justify-center h-screen bg-slate-50 p-6"><div className="bg-white p-10 rounded-[3rem] shadow-2xl w-full max-w-sm"><h2 className="text-2xl font-black mb-8 text-center gradient-text uppercase tracking-tighter">Accès Vendeuse</h2><input id="email" type="email" placeholder="Email" className="w-full p-4 bg-slate-50 rounded-2xl mb-4 outline-none"/><input id="pass" type="password" placeholder="Mot de passe" className="w-full p-4 bg-slate-50 rounded-2xl mb-8 outline-none"/><button onClick={() => signInWithEmailAndPassword(auth, document.getElementById('email').value, document.getElementById('pass').value).catch(e=>alert("Erreur de connexion"))} className="w-full bg-slate-900 text-white p-4 rounded-2xl font-black active:scale-95 transition-all">SE CONNECTER</button></div></div>
-                );
-                return <Admin />;
-            }
-
-            return (
-                <div className="min-h-screen flex flex-col">
-                    <header className="px-6 pt-10 pb-4 flex justify-between items-center sticky top-0 z-40 glass border-b border-amber-50">
-                        <div><h1 className="text-3xl font-black gradient-text tracking-tighter uppercase leading-none italic">Déclice</h1><p className="text-[10px] font-black text-slate-400 tracking-[0.3em] uppercase">Pain Farci Abidjan</p></div>
-                        <button onClick={() => setCartOpen(true)} className="relative bg-white w-14 h-14 rounded-2xl shadow-xl flex items-center justify-center text-brand-600 border border-white">
-                            <i className="fas fa-shopping-basket text-xl"></i>
-                            {cart.items.length > 0 && <span className="absolute -top-2 -right-2 bg-red-500 text-white w-6 h-6 rounded-full text-[10px] font-black flex items-center justify-center border-4 border-white">{cart.items.length}</span>}
-                        </button>
-                    </header>
-
-                    <OrderTracker orderId={currentOrderId} />
-
-                    <main className="px-6 pt-6 pb-32 grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-5xl mx-auto w-full">
-                        <div className="col-span-full bg-brand-500 rounded-[3rem] p-8 text-white shadow-xl relative overflow-hidden mb-2 italic">
-                            <h2 className="text-2xl font-black leading-tight mb-2">Le goût qui fait <br/> bouger Abidjan ! 🇨🇮</h2>
+        // On lance si prêt, sinon on attend l'événement
+        if (window.fb) startApp();
+        else window.addEventListener('firebase-ready', startApp);
+        window.addEventListener('hashchange', () => { window.location.reload(); });
+    </script>
+</body>
+</html>

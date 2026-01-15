@@ -3,20 +3,19 @@
 <head>
     <meta charset="UTF-8" />
     <title>Pain Farci Déclice – Abidjan</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0"/>
     <meta name="theme-color" content="#f59e0b">
-    
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="manifest" href="manifest.json">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800;900&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
-            theme: { extend: { colors: { brand: { 500: '#f59e0b', 900: '#451a03' } }, borderRadius: { '4xl': '2rem', '5xl': '3rem' } } }
+            theme: { extend: { colors: { brand: { 50: '#fffbeb', 100: '#fef3c7', 500: '#f59e0b', 600: '#d97706', 700: '#b45309' } }, fontFamily: { 'sans': ['Poppins', 'sans-serif'] } } }
         };
     </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <script type="module">
@@ -34,127 +33,160 @@
           measurementId: "G-4STB8KX58Y"
         };
 
-        try {
-            const app = initializeApp(firebaseConfig);
-            const db = getFirestore(app);
-            window.fb = { db, auth: getAuth(app), productsCol: collection(db, "products"), ordersCol: collection(db, "orders"), onSnapshot, doc, updateDoc, increment, setDoc, serverTimestamp, runTransaction, signOut, signInWithEmailAndPassword, onAuthStateChanged, query, orderBy };
-            window.fbReady = true;
-        } catch (e) {
-            window.fbError = e.message;
-        }
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        window.fb = { db, auth: getAuth(app), productsCol: collection(db, "products"), ordersCol: collection(db, "orders"), settingsDoc: doc(db, "settings", "store"), onSnapshot, doc, updateDoc, increment, setDoc, serverTimestamp, runTransaction, signOut, signInWithEmailAndPassword, onAuthStateChanged, query, orderBy };
+        window.dispatchEvent(new Event('firebase-ready'));
     </script>
 
     <style>
-        .glass { background: rgba(255, 255, 255, 0.75); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
-        .gradient-brand { background: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%); }
+        .glass { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(12px); }
+        .gradient-text { background: linear-gradient(to right, #f59e0b, #ea580c); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .animate-wave { animation: wave-pulse 2s infinite; }
+        @keyframes wave-pulse { 0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(29, 195, 255, 0.4); } 50% { transform: scale(1.02); box-shadow: 0 0 20px 10px rgba(29, 195, 255, 0); } }
     </style>
 </head>
-<body class="bg-amber-50/30 text-slate-900 h-full">
-    <div id="root">
-        <div class="flex items-center justify-center h-screen bg-white">
-            <div class="text-center">
-                <div class="w-10 h-10 border-4 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                <p id="status" class="text-[10px] font-black uppercase tracking-widest text-slate-400">Connexion aux serveurs...</p>
-            </div>
+<body class="h-full bg-slate-50 font-sans">
+    <div id="root" class="h-full flex items-center justify-center">
+        <div class="text-center">
+            <div class="w-12 h-12 border-4 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p class="text-slate-400 font-black text-[10px] uppercase tracking-widest">Pain Farci 225...</p>
         </div>
     </div>
 
     <script type="text/babel">
+        const { db, auth, productsCol, ordersCol, settingsDoc, onSnapshot, doc, updateDoc, increment, setDoc, serverTimestamp, runTransaction, signOut, signInWithEmailAndPassword, onAuthStateChanged, query, orderBy } = window.fb;
+        
         const SELLER_PHONE = "2250757618108";
-        const WAVE_LINK = "https://pay.wave.com/m/M_ci_CmPu37RXsPDN/c/ci/";
-        const SHOP_MAPS = "Https://maps.app.goo.gl/kbBVGu5LNdJDQaDY6";
+        const WAVE_LINK = "https://pay.wave.com/m/M_ci_CmPu37RXsPDN/c/ci/"; 
+        const SHOP_LOCATION = "Https://maps.app.goo.gl/kbBVGu5LNdJDQaDY6"; 
 
         function App() {
-            const [products, setProducts] = React.useState([]);
-            const [cart, setCart] = React.useState([]);
+            if (!window.fb) return null;
             const [user, setUser] = React.useState(null);
+            const [products, setProducts] = React.useState([]);
+            const [storeStatus, setStoreStatus] = React.useState({ isOpen: true });
+            const [cart, setCart] = React.useState([]);
+            const [cartOpen, setCartOpen] = React.useState(false);
+            const [lastOrderId, setLastOrderId] = React.useState(localStorage.getItem('lastOrderId'));
             const [view, setView] = React.useState('home');
-            const [loading, setLoading] = React.useState(true);
-            const [error, setError] = React.useState(null);
-
-            const { db, auth, productsCol, ordersCol, onSnapshot, doc, updateDoc, increment, setDoc, serverTimestamp, runTransaction, query, orderBy } = window.fb;
 
             React.useEffect(() => {
-                const unsubAuth = onAuthStateChanged(auth, u => setUser(u));
-                const unsubProd = onSnapshot(query(productsCol, orderBy("name")), 
-                    (s) => {
-                        setProducts(s.docs.map(d => ({id: d.id, ...d.data()})));
-                        setLoading(false);
-                    },
-                    (err) => {
-                        setError("Erreur Firestore: " + err.message);
-                        setLoading(false);
-                    }
-                );
-                return () => { unsubAuth(); unsubProd(); };
+                onAuthStateChanged(auth, u => setUser(u));
+                onSnapshot(settingsDoc, d => d.exists() && setStoreStatus(d.data()));
+                return onSnapshot(productsCol, s => setProducts(s.docs.map(d=>({id:d.id, ...d.data()}))));
             }, []);
 
-            const total = cart.reduce((s,i) => s + (i.price * i.qty), 0);
+            const total = cart.reduce((s,i)=>s+(i.price*i.qty),0);
 
-            if (error) return <div className="p-10 text-red-500 font-bold bg-white h-screen text-center">⚠️ {error}<br/><br/>Vérifiez vos règles de sécurité Firestore.</div>;
-            if (loading) return <div className="flex items-center justify-center h-screen bg-white font-black text-xs text-brand-500 animate-pulse">CHARGEMENT DU MENU...</div>;
+            const handleOrder = async (form) => {
+                const orderId = "CMD-" + Date.now();
+                try {
+                    await runTransaction(db, async (t) => {
+                        const productData = [];
+                        // 1. TOUTES LES LECTURES D'ABORD (Obligatoire)
+                        for (const item of cart) {
+                            const pRef = doc(db, "products", item.id);
+                            const pSnap = await t.get(pRef);
+                            if (!pSnap.exists()) throw `Produit ${item.name} introuvable !`;
+                            if (pSnap.data().stock < item.qty) throw `Stock insuffisant pour ${item.name}`;
+                            productData.push({ ref: pRef, qty: item.qty });
+                        }
+
+                        // 2. TOUTES LES ÉCRITURES ENSUITE
+                        for (const p of productData) {
+                            t.update(p.ref, { stock: increment(-p.qty) });
+                        }
+                        const orderRef = doc(db, "orders", orderId);
+                        t.set(orderRef, { customer: form, items: cart, total, status: "Reçue", createdAt: serverTimestamp() });
+                    });
+
+                    const msg = encodeURIComponent(`🥖 *DÉCLICE*\n*CLIENT:* ${form.name.toUpperCase()}\n*LIEU:* ${form.address}\n*TOTAL:* ${total} F\n⚠️ _SVP PAS D'APPEL._`);
+                    window.open(`https://wa.me/${SELLER_PHONE}?text=${msg}`);
+                    localStorage.setItem('lastOrderId', orderId);
+                    setLastOrderId(orderId);
+                    setCart([]);
+                    setCartOpen(false);
+                    setView('success');
+                } catch(e) { alert("Erreur: " + e); }
+            };
 
             if (window.location.hash === "#admin") {
-                return user ? <AdminUI fb={window.fb} signout={() => signOut(auth)} /> : <LoginUI fb={window.fb} />;
+                return user ? <AdminView fb={window.fb} storeStatus={storeStatus} signOut={() => signOut(auth)} /> : <LoginView auth={auth} signIn={signInWithEmailAndPassword} />;
             }
 
-            if (view === 'success') return (
-                <div className="h-screen flex flex-col items-center justify-center p-8 text-center bg-white animate-pop">
-                    <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-3xl mb-6">✅</div>
-                    <h2 className="text-2xl font-black mb-6 uppercase italic">C'est envoyé !</h2>
-                    <a href={WAVE_LINK} target="_blank" className="w-full bg-[#1dc3ff] text-white p-7 rounded-[2.5rem] font-black shadow-xl flex items-center justify-center gap-2 mb-4">
-                        <i className="fas fa-water"></i> PAYER VIA WAVE
-                    </a>
-                    <button onClick={() => setView('home')} className="mt-8 text-slate-300 font-black text-[10px] uppercase underline">Retour au menu</button>
-                </div>
-            );
+            if (view === 'success') return <SuccessView waveLink={WAVE_LINK} total={total} onBack={() => setView('home')} />;
 
             return (
-                <div className="min-h-screen">
-                    <header className="px-6 pt-12 pb-4 sticky top-0 z-40 glass border-b border-amber-50">
+                <div className="min-h-screen flex flex-col pb-20">
+                    <header className="px-6 pt-10 pb-4 sticky top-0 z-40 glass border-b border-amber-50">
                         <div className="flex justify-between items-center">
                             <div>
-                                <h1 className="text-3xl font-black text-brand-900 tracking-tighter uppercase italic leading-none">Déclice</h1>
-                                <p className="text-[10px] font-bold text-brand-500 uppercase tracking-widest">Pain Farci 225</p>
+                                <h1 className="text-3xl font-black gradient-text tracking-tighter uppercase leading-none italic">Déclice</h1>
+                                <p className="text-[10px] font-black text-slate-400 tracking-[0.2em] uppercase leading-none">Pain Farci 225 • Sans Appel</p>
                             </div>
-                            <div className="w-12 h-12 bg-white rounded-2xl shadow-xl flex items-center justify-center text-brand-500 relative border border-amber-50">
-                                <i className="fas fa-shopping-basket text-xl"></i>
-                                {cart.length > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white w-5 h-5 rounded-full text-[9px] font-bold flex items-center justify-center">{cart.length}</span>}
-                            </div>
+                            <button onClick={() => setCartOpen(true)} className="bg-white w-14 h-14 rounded-2xl shadow-xl flex items-center justify-center text-brand-600 border border-white">
+                                <i className="fas fa-shopping-basket"></i>
+                                {cart.length > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white w-5 h-5 rounded-full text-[9px] font-bold flex items-center justify-center border-2 border-white">{cart.length}</span>}
+                            </button>
                         </div>
                     </header>
 
-                    <main className="px-6 pt-6 space-y-4 max-w-2xl mx-auto pb-32">
-                        {products.map(p => (
-                            <div key={p.id} className={`bg-white p-5 rounded-[2.5rem] shadow-xl flex items-center gap-4 border border-white active:scale-95 transition-all ${p.stock <= 0 ? 'opacity-40 grayscale' : ''}`}>
-                                <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center text-3xl">🥖</div>
-                                <div className="flex-1">
-                                    <h3 className="font-black text-slate-800 uppercase tracking-tighter leading-none mb-1">{p.name}</h3>
-                                    <p className="text-brand-500 font-black text-sm">{p.price.toLocaleString()} F</p>
+                    {lastOrderId && <OrderTracker fb={window.fb} orderId={lastOrderId} shopLocation={SHOP_LOCATION} />}
+
+                    <main className="px-6 pt-6 max-w-5xl mx-auto w-full">
+                        {!storeStatus.isOpen && <div className="bg-slate-900 text-white p-6 rounded-[2rem] mb-8 text-center uppercase font-black text-[10px]">Boutique Fermée 😴</div>}
+                        <div className="grid grid-cols-1 gap-6">
+                            {products.map(p => (
+                                <div key={p.id} className="bg-white rounded-[2.5rem] p-5 shadow-xl flex items-center gap-4 border border-white">
+                                    <div className="w-16 h-16 bg-amber-50 rounded-2xl flex-shrink-0 flex items-center justify-center text-3xl">🥖</div>
+                                    <div className="flex-1">
+                                        <h3 className="font-black text-slate-800 text-lg leading-tight">{p.name}</h3>
+                                        <p className="text-brand-500 font-black text-sm">{p.price.toLocaleString()} F</p>
+                                    </div>
+                                    <button disabled={!storeStatus.isOpen || p.stock <= 0} onClick={() => setCart([...cart, {...p, qty: 1}])} className="bg-brand-500 text-white w-12 h-12 rounded-2xl shadow-lg flex items-center justify-center active:scale-90 transition-all">
+                                        <i className="fas fa-plus"></i>
+                                    </button>
                                 </div>
-                                <button disabled={p.stock <= 0} onClick={() => {
-                                    const exist = cart.find(x => x.id === p.id);
-                                    if(exist) setCart(cart.map(x => x.id === p.id ? {...x, qty: x.qty + 1} : x));
-                                    else setCart([...cart, {...p, qty: 1}]);
-                                }} className="bg-brand-500 text-white w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg"><i className="fas fa-plus"></i></button>
-                            </div>
-                        ))}
+                            ))}
+                        </div>
                     </main>
 
-                    {cart.length > 0 && (
-                        <div className="fixed bottom-8 left-6 right-6 z-50 max-w-md mx-auto">
-                            <button onClick={async () => {
-                                const name = prompt("Votre Nom ?");
-                                const addr = prompt("Quartier ?");
-                                if(!name || !addr) return;
-                                try {
-                                    const orderId = "CMD-" + Date.now();
-                                    await setDoc(doc(ordersCol, orderId), { customer: {name, address: addr}, items: cart, total, status: "Reçue", createdAt: serverTimestamp() });
-                                    window.open(`https://wa.me/${SELLER_PHONE}?text=${encodeURIComponent("🥖 COMMANDE: " + name + "\n💰 TOTAL: " + total + " F")}`);
-                                    setCart([]); setView('success');
-                                } catch(e) { alert("Erreur d'envoi"); }
-                            }} className="w-full bg-slate-900 text-white p-6 rounded-[2.5rem] flex justify-between items-center shadow-2xl border-4 border-white font-black uppercase italic text-xs tracking-widest">
-                                <span>Ma Commande</span><span>{total.toLocaleString()} F</span>
+                    {cartOpen && (
+                        <div className="fixed inset-0 z-[100] flex justify-end">
+                            <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-md" onClick={() => setCartOpen(false)}></div>
+                            <div className="relative bg-white w-full max-w-md h-full flex flex-col p-8 rounded-l-[3rem] shadow-2xl overflow-y-auto">
+                                <h2 className="font-black text-2xl mb-8 italic">MON PANIER</h2>
+                                <div className="flex-1 space-y-4">
+                                    {cart.map((i, idx) => <div key={idx} className="flex justify-between font-bold text-sm"><span>1x {i.name}</span><span>{i.price} F</span></div>)}
+                                </div>
+                                <div className="mt-6 pt-6 border-t space-y-4">
+                                    <div className="flex justify-between font-black text-brand-600 text-xl"><span>Total</span><span>{total} F</span></div>
+                                    <input id="cn" placeholder="Votre Nom" className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" />
+                                    <input id="ca" placeholder="Quartier précis" className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" />
+                                    <label className="flex items-center gap-3 bg-amber-50 p-4 rounded-2xl border border-amber-200">
+                                        <input type="checkbox" id="cy" className="w-5 h-5 accent-brand-600" />
+                                        <span className="text-[9px] font-black text-amber-800 uppercase leading-none">Je paie mon Yango moi-même</span>
+                                    </label>
+                                    <button 
+                                        onClick={() => {
+                                            const name = document.getElementById('cn').value;
+                                            const address = document.getElementById('ca').value;
+                                            const confirm = document.getElementById('cy').checked;
+                                            if(!name || !address || !confirm) return alert("Remplissez tout svp !");
+                                            handleOrder({name, address, confirmYango: confirm});
+                                        }}
+                                        className="w-full bg-slate-900 text-white p-5 rounded-[2rem] font-black uppercase text-xs tracking-widest shadow-2xl"
+                                    >VALIDER SANS APPELER</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {cart.length > 0 && !cartOpen && (
+                        <div className="fixed bottom-8 left-6 right-6 z-50 max-w-md mx-auto text-center">
+                            <button onClick={() => setCartOpen(true)} className="w-full bg-slate-900 text-white p-6 rounded-[2.5rem] flex justify-between items-center shadow-2xl border-4 border-white font-black text-xs uppercase tracking-widest italic">
+                                <span>Voir le panier</span><span>{total.toLocaleString()} F</span>
                             </button>
                         </div>
                     )}
@@ -162,60 +194,86 @@
             );
         }
 
-        const AdminUI = ({fb, signout}) => {
-            const [ords, setOrds] = React.useState([]);
+        function SuccessView({waveLink, total, onBack}) {
+            return (
+                <div className="flex flex-col items-center justify-center h-screen p-8 text-center bg-white">
+                    <div className="w-24 h-24 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-4xl mb-6">✅</div>
+                    <h2 className="text-2xl font-black text-slate-900 mb-6 uppercase tracking-tighter italic leading-none">C'est envoyé !</h2>
+                    <a href={waveLink} target="_blank" className="w-full bg-[#1dc3ff] text-white p-7 rounded-[2.5rem] font-black text-lg shadow-xl animate-wave flex flex-col items-center justify-center mb-6">
+                        <span>PAYER {total.toLocaleString()} F VIA WAVE</span>
+                    </a>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">⚠️ Payez Wave, envoyez la capture. Pas d'appel.</p>
+                    <button onClick={onBack} className="mt-8 text-slate-300 font-black text-[10px] uppercase underline">Retour</button>
+                </div>
+            );
+        }
+
+        function OrderTracker({fb, orderId, shopLocation}) {
+            const [order, setOrder] = React.useState(null);
+            React.useEffect(() => { return fb.onSnapshot(fb.doc(fb.db, "orders", orderId), d => setOrder(d.data())); }, [orderId]);
+            if(!order || order.status === "Livrée") return null;
+            return (
+                <div className="mx-6 mt-4 p-6 bg-white rounded-[2.5rem] shadow-2xl border-2 border-brand-500/20">
+                    <div className="flex justify-between items-center px-4 mb-4">
+                        {[{id:"Reçue", i:"📩"}, {id:"Cuisine", i:"👨‍🍳"}, {id:"Prêt", i:"🥖"}].map(s => (
+                            <div key={s.id} className={`flex flex-col items-center gap-1 ${order.status === s.id ? 'opacity-100 scale-125' : 'opacity-10'}`}>
+                                <span className="text-xl">{s.i}</span><span className="text-[8px] font-black uppercase">{s.id}</span>
+                            </div>
+                        ))}
+                    </div>
+                    {order.status === "Prêt" && (
+                        <a href={shopLocation} target="_blank" className="block w-full bg-blue-600 text-white text-center py-4 rounded-[2rem] font-black text-[10px] uppercase shadow-lg animate-pulse">Lancer Yango vers Pain Farci 225</a>
+                    )}
+                </div>
+            );
+        }
+
+        function AdminView({fb, signOut, storeStatus}) {
             const [prods, setProds] = React.useState([]);
+            const [ords, setOrds] = React.useState([]);
             React.useEffect(() => {
                 fb.onSnapshot(fb.productsCol, s => setProds(s.docs.map(d=>({id:d.id, ...d.data()}))));
-                return fb.onSnapshot(fb.query(fb.ordersCol, fb.orderBy("createdAt", "desc")), s => setOrds(s.docs.map(d=>({id:d.id, ...d.data()}))));
+                fb.onSnapshot(fb.query(fb.ordersCol, fb.orderBy("createdAt", "desc")), s => setOrds(s.docs.map(d=>({id:d.id, ...d.data()}))));
             }, []);
             return (
-                <div className="min-h-screen bg-slate-100 flex flex-col p-6">
-                    <header className="flex justify-between items-center mb-8 bg-slate-900 p-6 rounded-4xl text-white shadow-xl">
-                        <h1 className="font-black italic text-xs uppercase tracking-widest">Admin Déclice</h1>
-                        <button onClick={signout} className="bg-red-600 px-4 py-2 rounded-2xl text-[10px] font-black uppercase">Sortir</button>
-                    </header>
-                    <div className="space-y-4">
-                        {prods.map(p => (
-                            <div key={p.id} className="bg-white p-4 rounded-3xl flex justify-between items-center shadow-sm">
-                                <span className="font-bold text-xs uppercase">{p.name}</span>
-                                <div className="flex items-center gap-4">
-                                    <button onClick={()=>fb.updateDoc(fb.doc(fb.db,"products",p.id),{stock:fb.increment(-1)})} className="w-8 h-8 bg-slate-100 rounded-lg font-black">-</button>
-                                    <span className="font-black">{p.stock}</span>
-                                    <button onClick={()=>fb.updateDoc(fb.doc(fb.db,"products",p.id),{stock:fb.increment(1)})} className="w-8 h-8 bg-slate-100 rounded-lg font-black">+</button>
+                <div className="min-h-screen bg-slate-100 flex flex-col">
+                    <header className="bg-slate-900 text-white p-6 flex justify-between items-center"><h1 className="font-black italic text-xs uppercase tracking-widest">Admin Déclice</h1><button onClick={signOut} className="bg-red-600 px-4 py-1 rounded-full text-[9px] font-black">Sortir</button></header>
+                    <div className="p-4 bg-white border-b flex gap-4">
+                        <button onClick={()=>fb.updateDoc(fb.settingsDoc, {isOpen: !storeStatus.isOpen})} className={`flex-1 p-5 rounded-[2rem] font-black text-[10px] uppercase shadow-xl ${storeStatus.isOpen ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {storeStatus.isOpen ? "🟢 Ouvert" : "🔴 Fermé"}
+                        </button>
+                    </div>
+                    <main className="p-4 space-y-4">
+                        {ords.filter(o=>o.status!=="Livrée").map(o => (
+                            <div key={o.id} className="bg-white p-6 rounded-[2.5rem] shadow-sm border-l-8 border-brand-500 text-sm">
+                                <p className="font-black uppercase">{o.customer?.name} - {o.total} F</p>
+                                <div className="grid grid-cols-3 gap-2 mt-4">
+                                    <button onClick={()=>fb.updateDoc(fb.doc(fb.db, "orders", o.id), {status:"Cuisine"})} className="bg-amber-500 text-white p-2 rounded-xl text-[8px] font-black uppercase">Cuisine</button>
+                                    <button onClick={()=>fb.updateDoc(fb.doc(fb.db, "orders", o.id), {status:"Prêt"})} className="bg-green-600 text-white p-2 rounded-xl text-[8px] font-black uppercase">Prêt</button>
+                                    <button onClick={()=>fb.updateDoc(fb.doc(fb.db, "orders", o.id), {status:"Livrée"})} className="bg-slate-900 text-white p-2 rounded-xl text-[8px] font-black uppercase">Fini</button>
                                 </div>
                             </div>
                         ))}
+                    </main>
+                </div>
+            );
+        }
+
+        function LoginView({signIn, auth}) {
+            return (
+                <div className="h-screen flex items-center justify-center p-6 bg-slate-50">
+                    <div className="bg-white p-10 rounded-[3rem] shadow-2xl w-full max-w-sm text-center">
+                        <h2 className="text-2xl font-black mb-8 uppercase gradient-text italic tracking-tighter leading-none">Admin Login</h2>
+                        <input id="e" type="email" placeholder="Email" className="w-full p-4 bg-slate-50 rounded-2xl mb-4 font-bold outline-none text-sm"/>
+                        <input id="p" type="password" placeholder="Pass" className="w-full p-4 bg-slate-50 rounded-2xl mb-8 font-bold outline-none text-sm"/>
+                        <button onClick={()=>signIn(auth, document.getElementById('e').value, document.getElementById('p').value)} className="w-full bg-slate-900 text-white p-5 rounded-[2rem] font-black uppercase text-xs tracking-widest shadow-xl">Entrer</button>
                     </div>
                 </div>
             );
         }
 
-        const LoginUI = ({fb}) => (
-            <div className="h-screen flex items-center justify-center p-8 bg-slate-50">
-                <div className="bg-white p-12 rounded-[3rem] shadow-2xl w-full max-w-sm text-center">
-                    <h2 className="text-3xl font-black mb-10 uppercase gradient-text italic">Admin Access</h2>
-                    <input id="e" type="email" placeholder="Email" className="w-full p-4 bg-slate-50 rounded-2xl mb-4 font-bold outline-none border-none text-sm"/>
-                    <input id="p" type="password" placeholder="Pass" className="w-full p-4 bg-slate-50 rounded-2xl mb-10 font-bold outline-none border-none text-sm"/>
-                    <button onClick={()=>fb.signInWithEmailAndPassword(fb.auth, document.getElementById('e').value, document.getElementById('p').value)} className="w-full bg-slate-900 text-white p-6 rounded-4xl font-black uppercase text-xs shadow-xl">Entrer</button>
-                </div>
-            </div>
-        );
-
-        // --- Démarrage Ultra-Sécurisé ---
-        const start = () => {
-            if (window.fbReady) {
-                const root = ReactDOM.createRoot(document.getElementById('root'));
-                root.render(<App />);
-            } else if (window.fbError) {
-                document.getElementById('status').innerText = "Erreur: " + window.fbError;
-                document.getElementById('status').classList.add('text-red-500');
-            } else {
-                setTimeout(start, 200);
-            }
-        };
-        start();
-        window.addEventListener('hashchange', () => window.location.reload());
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        window.addEventListener('firebase-ready', () => { root.render(<App />); });
     </script>
 </body>
 </html>

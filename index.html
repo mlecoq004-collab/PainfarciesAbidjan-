@@ -5,27 +5,14 @@
     <title>Pain Farci Déclice – Abidjan</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0"/>
     <meta name="theme-color" content="#f59e0b">
-    
     <link rel="manifest" href="manifest.json">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800;900&display=swap" rel="stylesheet">
-    
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
-            theme: { 
-                extend: { 
-                    colors: { 
-                        brand: { 50: '#fffbeb', 100: '#fef3c7', 500: '#f59e0b', 600: '#d97706', 700: '#b45309' }
-                    },
-                    fontFamily: { 'sans': ['Poppins', 'sans-serif'] }
-                } 
-            }
+            theme: { extend: { colors: { brand: { 50: '#fffbeb', 100: '#fef3c7', 500: '#f59e0b', 600: '#d97706', 700: '#b45309' } }, fontFamily: { 'sans': ['Poppins', 'sans-serif'] } } }
         };
     </script>
-    
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -33,7 +20,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getFirestore, collection, doc, updateDoc, increment, onSnapshot, addDoc, serverTimestamp, runTransaction, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getFirestore, collection, doc, updateDoc, increment, onSnapshot, setDoc, serverTimestamp, runTransaction, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
         import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
         const firebaseConfig = {
@@ -48,10 +35,7 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-        window.fb = { 
-            db, auth: getAuth(app), productsCol: collection(db, "products"), 
-            ordersCol: collection(db, "orders"), onSnapshot, doc, updateDoc, increment, addDoc, serverTimestamp, runTransaction, signOut, signInWithEmailAndPassword, onAuthStateChanged, query, orderBy 
-        };
+        window.fb = { db, auth: getAuth(app), productsCol: collection(db, "products"), ordersCol: collection(db, "orders"), onSnapshot, doc, updateDoc, increment, setDoc, serverTimestamp, runTransaction, signOut, signInWithEmailAndPassword, onAuthStateChanged, query, orderBy };
     </script>
 
     <style>
@@ -66,10 +50,9 @@
     <div id="root" class="h-full"></div>
 
     <script type="text/babel">
-        const { db, auth, productsCol, ordersCol, onSnapshot, doc, updateDoc, increment, addDoc, serverTimestamp, runTransaction, signOut, signInWithEmailAndPassword, onAuthStateChanged, query, orderBy } = window.fb;
+        const { db, auth, productsCol, ordersCol, onSnapshot, doc, updateDoc, increment, setDoc, serverTimestamp, runTransaction, signOut, signInWithEmailAndPassword, onAuthStateChanged, query, orderBy } = window.fb;
         const SELLER_PHONE = "2250757618108"; 
 
-        // --- HOOK PANIER ---
         const useCart = () => {
             const [items, setItems] = React.useState([]);
             const addItem = (p) => {
@@ -88,16 +71,14 @@
             return (
                 <div className="product-card bg-white rounded-[2.5rem] p-6 shadow-xl shadow-amber-200/20 border border-white flex flex-col relative transition-all">
                     <div className={`absolute top-4 right-4 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${isOut ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
-                        {isOut ? 'Épuisé' : `Stock: ${product.stock}`}
+                        {isOut ? 'Épuisé' : `En stock: ${product.stock}`}
                     </div>
-                    <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center text-3xl mb-4">
-                        {product.category === 'Boisson' ? '🥤' : '🥖'}
-                    </div>
+                    <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center text-3xl mb-4">{product.category === 'Boisson' ? '🥤' : '🥖'}</div>
                     <h3 className="font-extrabold text-lg text-slate-800 leading-tight mb-1">{product.name}</h3>
                     <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-4">{product.category}</p>
                     <div className="mt-auto flex items-center justify-between">
-                        <span className="text-xl font-black text-slate-900">{product.price.toLocaleString()} <span className="text-[10px] text-brand-500">FCFA</span></span>
-                        <button disabled={isOut} onClick={() => onAdd(product)} className="bg-brand-500 text-white w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg active:scale-90 transition-all">
+                        <span className="text-xl font-black text-slate-900">{product.price.toLocaleString()} <span className="text-[10px] text-brand-500 font-black">FCFA</span></span>
+                        <button disabled={isOut} onClick={() => onAdd(product)} className="bg-brand-500 text-white w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg active:scale-90 transition-all focus:outline-none">
                             <i className={`fas ${isOut ? 'fa-hourglass-end' : 'fa-plus'}`}></i>
                         </button>
                     </div>
@@ -105,14 +86,45 @@
             );
         }
 
+        // --- SUIVI DE COMMANDE (CLIENT) ---
+        function OrderTracker({orderId}) {
+            const [order, setOrder] = React.useState(null);
+            React.useEffect(() => {
+                if(!orderId) return;
+                return onSnapshot(doc(db, "orders", orderId), (d) => setOrder(d.data()));
+            }, [orderId]);
+
+            if(!order || order.status === "Livrée") return null;
+
+            const steps = [
+                { id: "Reçue", icon: "📩", label: "Reçue" },
+                { id: "Cuisine", icon: "🍳", label: "En cuisine" },
+                { id: "Prêt", icon: "🥖", label: "C'est prêt !" }
+            ];
+
+            return (
+                <div className="mx-6 mt-4 p-5 bg-slate-900 rounded-[2rem] text-white shadow-2xl animate-bounce-slow">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-brand-500 mb-3 text-center">Suivi de votre commande en direct</p>
+                    <div className="flex justify-between items-center px-2">
+                        {steps.map((s, idx) => (
+                            <div key={s.id} className={`flex flex-col items-center gap-1 ${order.status === s.id ? 'opacity-100 scale-110' : 'opacity-30'}`}>
+                                <span className="text-2xl">{s.icon}</span>
+                                <span className="text-[9px] font-bold uppercase tracking-tighter">{s.label}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
         // --- PANIER (DRAWER) ---
-        function CartDrawer({cart, isOpen, onClose}) {
-            const [form, setForm] = React.useState({name: "", phone: "", address: "", gps: ""});
+        function CartDrawer({cart, isOpen, onClose, onOrderSuccess}) {
+            const [form, setForm] = React.useState({name: "", phone: "", address: "", note: "", gps: ""});
             const [loading, setLoading] = React.useState(false);
 
             const getLoc = () => {
                 navigator.geolocation.getCurrentPosition(p => {
-                    setForm({...form, gps: `https://www.google.com/maps?q=${p.coords.latitude},${p.coords.longitude}`});
+                    setForm({...form, gps: `https://www.google.com/maps?q=$?q=${p.coords.latitude},${p.coords.longitude}`});
                     alert("📍 Position capturée !");
                 }, () => alert("Activez votre GPS."));
             };
@@ -121,18 +133,25 @@
                 e.preventDefault();
                 setLoading(true);
                 try {
+                    const orderId = "CMD-" + Date.now();
                     await runTransaction(db, async (t) => {
+                        const productSnaps = [];
                         for (const item of cart.items) {
                             const pRef = doc(db, "products", item.id);
                             const pSnap = await t.get(pRef);
                             if (pSnap.data().stock < item.qty) throw `Stock épuisé pour ${item.name}`;
-                            t.update(pRef, { stock: increment(-item.qty) });
+                            productSnaps.push({ ref: pRef, qty: item.qty });
                         }
-                        await addDoc(ordersCol, { customer: form, items: cart.items, total: cart.total, status: "Reçue", createdAt: serverTimestamp() });
+                        for (const p of productSnaps) { t.update(p.ref, { stock: increment(-p.qty) }); }
+                        const orderRef = doc(db, "orders", orderId);
+                        t.set(orderRef, { customer: form, items: cart.items, total: cart.total, status: "Reçue", createdAt: serverTimestamp() });
                     });
-                    const msg = encodeURIComponent(`🥖 *DÉCLICE PAIN FARCI*\n*Client:* ${form.name}\n*Lieu:* ${form.address}\n*Total:* ${cart.total} FCFA\n📍 *GPS:* ${form.gps}`);
+
+                    const msg = encodeURIComponent(`🥖 *DÉCLICE PAIN FARCI*\n*CLIENT:* ${form.name.toUpperCase()}\n*LIEU:* ${form.address}\n*TOTAL:* ${cart.total.toLocaleString()} FCFA\n📍 *GPS:* ${form.gps}\n\n⚠️ _Merci de ne pas appeler. Suivez l'avancement sur l'app._`);
                     window.open(`https://wa.me/${SELLER_PHONE}?text=${msg}`);
-                    cart.clear(); onClose(); alert("Commande validée !");
+                    localStorage.setItem('lastOrderId', orderId);
+                    onOrderSuccess(orderId);
+                    cart.clear(); onClose();
                 } catch (err) { alert(err); }
                 setLoading(false);
             };
@@ -142,20 +161,27 @@
                 <div className="fixed inset-0 z-[100] flex justify-end">
                     <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose}></div>
                     <div className="relative bg-white w-full max-w-md h-full shadow-2xl flex flex-col animate-slide-in rounded-l-[2.5rem] overflow-hidden">
-                        <div className="p-8 flex justify-between items-center border-b"><h2 className="font-black">MON PANIER</h2><button onClick={onClose}>×</button></div>
-                        <div className="flex-1 overflow-y-auto p-8 space-y-4">
+                        <div className="p-8 flex justify-between items-center border-b border-slate-50"><h2 className="font-black text-slate-800 tracking-tighter uppercase text-lg">Mon Panier</h2><button onClick={onClose} className="text-2xl text-slate-300">×</button></div>
+                        <div className="flex-1 overflow-y-auto p-8 space-y-6">
                             {cart.items.map(i => (
-                                <div key={i.id} className="flex justify-between text-sm"><span>{i.qty}x {i.name}</span><span className="font-bold">{i.price * i.qty} FCFA</span></div>
+                                <div key={i.id} className="flex justify-between items-center bg-slate-50 p-4 rounded-2xl">
+                                    <div className="text-sm font-bold text-slate-700">{i.qty}x {i.name}</div>
+                                    <div className="font-black text-brand-600 text-sm">{i.price * i.qty} FCFA</div>
+                                </div>
                             ))}
                             {cart.items.length > 0 && (
-                                <form onSubmit={handleSubmit} className="pt-8 space-y-4">
-                                    <div className="text-xl font-black mb-4 text-brand-600">Total: {cart.total} FCFA</div>
-                                    <input placeholder="Nom" required className="w-full p-4 bg-slate-50 rounded-2xl outline-none" onChange={e=>setForm({...form, name:e.target.value})}/>
-                                    <input placeholder="Téléphone" required className="w-full p-4 bg-slate-50 rounded-2xl outline-none" onChange={e=>setForm({...form, phone:e.target.value})}/>
-                                    <input placeholder="Quartier" required className="w-full p-4 bg-slate-50 rounded-2xl outline-none" onChange={e=>setForm({...form, address:e.target.value})}/>
-                                    <button type="button" onClick={getLoc} className="w-full py-3 bg-blue-50 text-blue-600 rounded-2xl font-bold text-xs">📍 Partager ma position</button>
-                                    <button type="submit" disabled={loading} className="w-full bg-slate-900 text-white p-5 rounded-[2rem] font-black">{loading ? "Envoi..." : "COMMANDER SUR WHATSAPP"}</button>
-                                </form>
+                                <div className="space-y-6">
+                                    <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 text-center">
+                                        <div className="flex justify-between items-center mb-1 font-black text-brand-600 italic"><span>TOTAL</span><span>{cart.total.toLocaleString()} FCFA</span></div>
+                                        <p className="text-[9px] text-amber-600 font-black uppercase tracking-widest mt-2 border-t border-amber-200 pt-2">LIVRAISON YANGO À VOTRE CHARGE</p>
+                                    </div>
+                                    <form onSubmit={handleSubmit} className="space-y-4">
+                                        <input placeholder="Nom et Prénom" required className="w-full p-4 bg-slate-100 rounded-2xl text-sm font-medium outline-none" onChange={e=>setForm({...form, name:e.target.value})}/>
+                                        <input placeholder="Quartier précis" required className="w-full p-4 bg-slate-100 rounded-2xl text-sm font-medium outline-none" onChange={e=>setForm({...form, address:e.target.value})}/>
+                                        <button type="button" onClick={getLoc} className="w-full py-4 bg-blue-50 text-blue-600 rounded-2xl font-bold text-xs"><i className="fas fa-location-arrow mr-2"></i>ACTIVER GPS</button>
+                                        <button type="submit" disabled={loading} className="w-full bg-slate-900 text-white p-5 rounded-[2rem] font-black text-lg active:scale-95 transition-all shadow-xl">VALIDER SANS APPELER</button>
+                                    </form>
+                                </div>
                             )}
                         </div>
                     </div>
@@ -163,43 +189,38 @@
             );
         }
 
-        // --- DASHBOARD ADMIN ---
         function Admin() {
             const [prods, setProds] = React.useState([]);
             const [ords, setOrds] = React.useState([]);
             const [tab, setTab] = React.useState("orders");
-
             React.useEffect(() => {
                 const unsubP = onSnapshot(productsCol, s => setProds(s.docs.map(d=>({id:d.id, ...d.data()}))));
                 const unsubO = onSnapshot(query(ordersCol, orderBy("createdAt", "desc")), s => setOrds(s.docs.map(d=>({id:d.id, ...d.data()}))));
                 return () => { unsubP(); unsubO(); };
             }, []);
 
+            const updateStatus = (id, s) => updateDoc(doc(db, "orders", id), { status: s });
+
             return (
-                <div className="min-h-screen bg-slate-100">
-                    <header className="bg-slate-900 text-white p-6 flex justify-between">
-                        <h1 className="font-black italic">ADMIN DÉCLICE</h1>
-                        <button onClick={() => signOut(auth)} className="text-xs underline">Sortir</button>
-                    </header>
-                    <div className="flex bg-white shadow-sm">
-                        <button onClick={()=>setTab("orders")} className={`flex-1 p-4 font-bold ${tab==='orders'?'border-b-4 border-brand-500':''}`}>Commandes</button>
-                        <button onClick={()=>setTab("stocks")} className={`flex-1 p-4 font-bold ${tab==='stocks'?'border-b-4 border-brand-500':''}`}>Stocks</button>
-                    </div>
-                    <main className="p-4 space-y-4">
+                <div className="min-h-screen bg-slate-100 flex flex-col">
+                    <header className="bg-slate-900 text-white p-6 flex justify-between items-center"><h1 className="font-black italic">ADMIN DÉCLICE</h1><button onClick={() => signOut(auth)} className="text-xs bg-red-600 px-4 py-1 rounded-full font-black">SORTIR</button></header>
+                    <div className="flex bg-white shadow-sm sticky top-0 z-10"><button onClick={()=>setTab("orders")} className={`flex-1 p-4 font-bold text-xs uppercase ${tab==='orders'?'border-b-4 border-brand-500 text-brand-600':'text-slate-400'}`}>Commandes ({ords.length})</button><button onClick={()=>setTab("stocks")} className={`flex-1 p-4 font-bold text-xs uppercase ${tab==='stocks'?'border-b-4 border-brand-500 text-brand-600':'text-slate-400'}`}>Stocks</button></div>
+                    <main className="p-4 space-y-4 max-w-2xl mx-auto w-full">
                         {tab === 'stocks' ? prods.map(p => (
-                            <div key={p.id} className="bg-white p-4 rounded-3xl flex justify-between items-center shadow-sm">
-                                <span className="font-bold">{p.name}</span>
-                                <div className="flex items-center gap-3">
-                                    <button onClick={()=>updateDoc(doc(db,"products",p.id),{stock:increment(-1)})} className="w-8 h-8 bg-slate-100 rounded-lg">-</button>
-                                    <span className="font-black">{p.stock}</span>
-                                    <button onClick={()=>updateDoc(doc(db,"products",p.id),{stock:increment(1)})} className="w-8 h-8 bg-slate-100 rounded-lg">+</button>
+                            <div key={p.id} className="bg-white p-5 rounded-3xl flex justify-between items-center shadow-sm border border-white"><div><p className="font-black text-slate-800 uppercase">{p.name}</p><p className="text-[10px] font-bold text-slate-400">Restants: {p.stock}</p></div><div className="flex items-center gap-3"><button onClick={()=>updateDoc(doc(db,"products",p.id),{stock:increment(-1)})} className="w-10 h-10 bg-slate-100 rounded-xl font-black">-</button><span className="font-black text-lg">{p.stock}</span><button onClick={()=>updateDoc(doc(db,"products",p.id),{stock:increment(1)})} className="w-10 h-10 bg-slate-100 rounded-xl font-black">+</button></div></div>
+                        )) : ords.filter(o => o.status !== "Livrée").map(o => (
+                            <div key={o.id} className="bg-white p-6 rounded-[2rem] shadow-sm border-l-8 border-brand-500 text-sm mb-4">
+                                <div className="flex justify-between items-start mb-4">
+                                    <div><p className="font-black text-slate-800 text-base">{o.customer?.name}</p><p className="text-blue-600 font-bold">{o.customer?.address}</p></div>
+                                    <span className="bg-amber-100 text-amber-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">{o.status}</span>
                                 </div>
-                            </div>
-                        )) : ords.map(o => (
-                            <div key={o.id} className="bg-white p-4 rounded-3xl shadow-sm border-l-4 border-brand-500 text-sm">
-                                <p className="font-black">{o.customer?.name} - {o.total} FCFA</p>
-                                <p className="text-slate-500 text-xs">{o.items?.map(i=>`${i.qty}x ${i.name}`).join(", ")}</p>
-                                <a href={o.customer?.gps} target="_blank" className="text-blue-500 font-bold underline mt-2 inline-block">🗺️ Voir sur la carte</a>
+                                <div className="bg-slate-50 p-4 rounded-xl text-xs font-bold text-slate-600 mb-6 italic leading-relaxed">{o.items?.map(i=>`${i.qty}x ${i.name}`).join(", ")}</div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button onClick={()=>updateStatus(o.id, "Cuisine")} className="bg-amber-500 text-white p-3 rounded-xl text-[10px] font-black uppercase tracking-widest">En Cuisine 🍳</button>
+                                    <button onClick={()=>updateStatus(o.id, "Prêt")} className="bg-green-600 text-white p-3 rounded-xl text-[10px] font-black uppercase tracking-widest">C'est Prêt 🥖</button>
+                                    <button onClick={()=>updateStatus(o.id, "Livrée")} className="col-span-2 bg-slate-900 text-white p-3 rounded-xl text-[10px] font-black uppercase tracking-widest">Départ Livreur ✅</button>
+                                </div>
+                                <a href={o.customer?.gps} target="_blank" className="block mt-3 text-center text-blue-500 font-black text-[10px] uppercase tracking-widest underline italic">Ouvrir position Yango 🗺️</a>
                             </div>
                         ))}
                     </main>
@@ -207,71 +228,37 @@
             );
         }
 
-        // --- APP ROOT ---
         function App() {
             const [user, setUser] = React.useState(null);
             const [products, setProducts] = React.useState([]);
             const [cartOpen, setCartOpen] = React.useState(false);
+            const [currentOrderId, setCurrentOrderId] = React.useState(localStorage.getItem('lastOrderId'));
             const cart = useCart();
 
-            React.useEffect(() => {
-                onAuthStateChanged(auth, u => setUser(u));
-                return onSnapshot(productsCol, s => setProducts(s.docs.map(d=>({id:d.id, ...d.data()}))));
+            React.useEffect(() => { 
+                onAuthStateChanged(auth, u => setUser(u)); 
+                return onSnapshot(productsCol, s => setProducts(s.docs.map(d=>({id:d.id, ...d.data()})))); 
             }, []);
 
             if (window.location.hash === "#admin") {
                 if (!user) return (
-                    <div className="flex items-center justify-center h-screen bg-slate-50 p-6 text-center">
-                        <div className="bg-white p-10 rounded-[3rem] shadow-xl w-full max-w-sm">
-                            <h2 className="text-2xl font-black mb-6 gradient-text">ADMINISTRATION</h2>
-                            <input id="email" type="email" placeholder="Email" className="w-full p-4 bg-slate-50 rounded-2xl mb-4 outline-none"/>
-                            <input id="pass" type="password" placeholder="Pass" className="w-full p-4 bg-slate-50 rounded-2xl mb-6 outline-none"/>
-                            <button onClick={() => signInWithEmailAndPassword(auth, document.getElementById('email').value, document.getElementById('pass').value).catch(e=>alert("Erreur de connexion"))} 
-                                className="w-full bg-slate-900 text-white p-4 rounded-2xl font-black">CONNEXION</button>
-                        </div>
-                    </div>
+                    <div className="flex items-center justify-center h-screen bg-slate-50 p-6"><div className="bg-white p-10 rounded-[3rem] shadow-2xl w-full max-w-sm"><h2 className="text-2xl font-black mb-8 text-center gradient-text uppercase tracking-tighter">Accès Vendeuse</h2><input id="email" type="email" placeholder="Email" className="w-full p-4 bg-slate-50 rounded-2xl mb-4 outline-none"/><input id="pass" type="password" placeholder="Mot de passe" className="w-full p-4 bg-slate-50 rounded-2xl mb-8 outline-none"/><button onClick={() => signInWithEmailAndPassword(auth, document.getElementById('email').value, document.getElementById('pass').value).catch(e=>alert("Erreur de connexion"))} className="w-full bg-slate-900 text-white p-4 rounded-2xl font-black active:scale-95 transition-all">SE CONNECTER</button></div></div>
                 );
                 return <Admin />;
             }
 
             return (
                 <div className="min-h-screen flex flex-col">
-                    <header className="px-6 pt-10 pb-6 flex justify-between items-center sticky top-0 z-40 glass border-b border-amber-100">
-                        <div><h1 className="text-3xl font-black gradient-text tracking-tighter uppercase leading-none">Déclice</h1><p className="text-[10px] font-bold text-slate-400 tracking-[0.3em] uppercase">Pain Farci Abidjan</p></div>
-                        <button onClick={() => setCartOpen(true)} className="relative bg-white w-14 h-14 rounded-2xl shadow-xl flex items-center justify-center text-brand-600">
+                    <header className="px-6 pt-10 pb-4 flex justify-between items-center sticky top-0 z-40 glass border-b border-amber-50">
+                        <div><h1 className="text-3xl font-black gradient-text tracking-tighter uppercase leading-none italic">Déclice</h1><p className="text-[10px] font-black text-slate-400 tracking-[0.3em] uppercase">Pain Farci Abidjan</p></div>
+                        <button onClick={() => setCartOpen(true)} className="relative bg-white w-14 h-14 rounded-2xl shadow-xl flex items-center justify-center text-brand-600 border border-white">
                             <i className="fas fa-shopping-basket text-xl"></i>
-                            {cart.items.length > 0 && <span className="absolute -top-2 -right-2 bg-red-500 text-white w-6 h-6 rounded-full text-[10px] font-bold flex items-center justify-center border-4 border-white">{cart.items.length}</span>}
+                            {cart.items.length > 0 && <span className="absolute -top-2 -right-2 bg-red-500 text-white w-6 h-6 rounded-full text-[10px] font-black flex items-center justify-center border-4 border-white">{cart.items.length}</span>}
                         </button>
                     </header>
-                    <main className="px-6 pt-8 pb-32 grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-5xl mx-auto w-full">
-                        <div className="col-span-full bg-brand-500 rounded-[3rem] p-8 text-white shadow-xl relative overflow-hidden mb-4">
+
+                    <OrderTracker orderId={currentOrderId} />
+
+                    <main className="px-6 pt-6 pb-32 grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-5xl mx-auto w-full">
+                        <div className="col-span-full bg-brand-500 rounded-[3rem] p-8 text-white shadow-xl relative overflow-hidden mb-2 italic">
                             <h2 className="text-2xl font-black leading-tight mb-2">Le goût qui fait <br/> bouger Abidjan ! 🇨🇮</h2>
-                            <p className="text-brand-100 text-[10px] font-black uppercase tracking-widest opacity-80 italic underline">Frais • Chaud • Rapide</p>
-                        </div>
-                        {products.length === 0 ? <p className="text-center col-span-full py-20 text-slate-300 font-bold">Chargement du menu...</p> : 
-                            products.map(p => <ProductCard key={p.id} product={p} onAdd={cart.addItem} />)
-                        }
-                    </main>
-                    {cart.items.length > 0 && (
-                        <div className="fixed bottom-8 left-6 right-6 z-50 max-w-md mx-auto">
-                            <button onClick={() => setCartOpen(true)} className="w-full bg-slate-900 text-white p-6 rounded-[2.5rem] flex justify-between items-center shadow-2xl active:scale-95 transition-all">
-                                <span className="font-black text-xs uppercase tracking-widest italic underline">Voir mon panier ({cart.items.length})</span>
-                                <span className="text-xl font-black">{cart.total.toLocaleString()} FCFA</span>
-                            </button>
-                        </div>
-                    )}
-                    <CartDrawer cart={cart} isOpen={cartOpen} onClose={() => setCartOpen(false)} />
-                </div>
-            );
-        }
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-        window.addEventListener('hashchange', () => root.render(<App />));
-
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'));
-        }
-    </script>
-</body>
-</html>
